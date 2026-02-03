@@ -12,6 +12,40 @@ const GOOGLE_API_KEY = 'AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8'; // Replace wit
 const COVENTRY_CENTRE = { lat: 52.2919, lng: -1.5358 };
 
 // =============================================================================
+// FIREBASE CONFIGURATION & INITIALIZATION
+// =============================================================================
+// Rating System:
+// - User ratings are stored in Firebase Firestore in real-time
+// - Each place has a collection of reviews under 'ratings/{placeName}/reviews'
+// - Ratings are continuously updated from both Google and Firebase
+// - The displayed rating combines Google reviews (weighted) + Firebase reviews
+// - Real-time listeners update the map when anyone submits a new rating
+// =============================================================================
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDFpSkI3YoYE03HUL9Ki_R-o8AsYULekhM",
+  authDomain: "proximity-leamingtonspa.firebaseapp.com",
+  projectId: "proximity-leamingtonspa",
+  storageBucket: "proximity-leamingtonspa.firebasestorage.app",
+  messagingSenderId: "342370019248",
+  appId: "1:342370019248:web:b73019ec57da5b2c4c9875"
+};
+
+// Initialize Firebase
+let db;
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  console.log('%c🔥 Firebase Initialized!', 'color: #ff9800; font-weight: bold; font-size: 14px;');
+  console.log('📊 Connected to Firestore database');
+  console.log('🔄 Real-time rating updates enabled');
+  console.log('💾 All ratings will be saved to cloud and synced across users');
+} catch (error) {
+  console.error('❌ Firebase initialization error:', error);
+  console.warn('⚠️ Falling back to local storage only');
+}
+
+// =============================================================================
 // PHOTO DISPLAY FUNCTIONS - OPTION A (No API Setup Required)
 // =============================================================================
 
@@ -349,6 +383,17 @@ map.on('load', () => {
     console.log('14. ✅ Layer added - circles should be visible and clickable!');
     console.log('15. ==> Check the map - you should see', SAMPLE_PLACES.length, 'colored circles');
     console.log('16. Verifying layer exists:', map.getLayer('place-bubbles') ? 'YES ✓' : 'NO ✗');
+    
+    // Load ratings from Firebase and set up real-time updates
+    console.log('17. Loading ratings from Firebase...');
+    loadAllFirebaseRatings().then(() => {
+      console.log('✅ Firebase ratings loaded and map updated');
+      
+      // Set up real-time listeners after initial load
+      setupRealtimeListeners();
+    }).catch(error => {
+      console.error('❌ Error loading Firebase ratings:', error);
+    });
   } catch (error) {
     console.error('❌ Error adding layer:', error);
     alert('Error adding circles to map: ' + error.message);
@@ -731,7 +776,126 @@ map.on('load', () => {
     }
   });
 
-  // Rating tracking functions
+  // ============================================================================
+  // FIREBASE RATING FUNCTIONS
+  // ============================================================================
+  
+  // Load all ratings from Firebase for a specific place
+  async function loadFirebaseRatings(placeIndex) {
+    if (!db) {
+      console.warn('⚠️ Firebase not initialized, using local storage only');
+      return [];
+    }
+    
+    try {
+      const placeName = SAMPLE_PLACES[placeIndex].name;
+      const ratingsRef = db.collection('ratings').doc(placeName).collection('reviews');
+      const snapshot = await ratingsRef.get();
+      
+      const ratings = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        ratings.push(data.rating);
+      });
+      
+      console.log(`📊 Loaded ${ratings.length} Firebase ratings for ${placeName}`);
+      return ratings;
+    } catch (error) {
+      console.error('❌ Error loading Firebase ratings:', error);
+      return [];
+    }
+  }
+  
+  // Save a new rating to Firebase
+  async function saveRatingToFirebase(placeIndex, rating, userId) {
+    if (!db) {
+      console.warn('⚠️ Firebase not initialized, saving to local storage only');
+      return false;
+    }
+    
+    try {
+      const placeName = SAMPLE_PLACES[placeIndex].name;
+      const ratingsRef = db.collection('ratings').doc(placeName).collection('reviews');
+      
+      // Add the rating with timestamp and user ID
+      await ratingsRef.add({
+        rating: rating,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        userId: userId || 'anonymous',
+        placeIndex: placeIndex
+      });
+      
+      console.log(`✅ Rating ${rating} saved to Firebase for ${placeName}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving rating to Firebase:', error);
+      return false;
+    }
+  }
+  
+  // Load all Firebase ratings and update SAMPLE_PLACES on startup
+  async function loadAllFirebaseRatings() {
+    if (!db) {
+      console.warn('⚠️ Firebase not initialized');
+      return;
+    }
+    
+    console.log('📥 Loading all ratings from Firebase...');
+    
+    for (let i = 0; i < SAMPLE_PLACES.length; i++) {
+      const firebaseRatings = await loadFirebaseRatings(i);
+      // Replace the empty communityRatings array with Firebase data
+      SAMPLE_PLACES[i].communityRatings = firebaseRatings;
+    }
+    
+    // Update the map with loaded ratings
+    if (map.getSource('places')) {
+      map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
+      console.log('✅ Map updated with Firebase ratings');
+    }
+  }
+  
+  // Set up real-time listeners for rating updates
+  function setupRealtimeListeners() {
+    if (!db) {
+      console.warn('⚠️ Firebase not initialized, real-time updates disabled');
+      return;
+    }
+    
+    console.log('👂 Setting up real-time listeners for rating updates...');
+    
+    // Listen to the entire ratings collection
+    SAMPLE_PLACES.forEach((place, index) => {
+      const placeName = place.name;
+      const ratingsRef = db.collection('ratings').doc(placeName).collection('reviews');
+      
+      ratingsRef.onSnapshot((snapshot) => {
+        const ratings = [];
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          ratings.push(data.rating);
+        });
+        
+        // Update the place's ratings
+        SAMPLE_PLACES[index].communityRatings = ratings;
+        
+        // Update the map in real-time
+        if (map.getSource('places')) {
+          map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
+          console.log(`🔄 Real-time update: ${placeName} now has ${ratings.length} ratings`);
+        }
+      }, (error) => {
+        console.error(`❌ Error listening to ${placeName}:`, error);
+      });
+    });
+    
+    console.log('✅ Real-time listeners active for all places');
+  }
+  
+  // ============================================================================
+  // LOCAL STORAGE RATING FUNCTIONS (for user's own ratings)
+  // ============================================================================
+  
   function getUserRating(placeIndex) {
     const userRatings = JSON.parse(localStorage.getItem('userRatings') || '{}');
     return userRatings[placeIndex] || null;
@@ -747,6 +911,16 @@ map.on('load', () => {
     const userRatings = JSON.parse(localStorage.getItem('userRatings') || '{}');
     delete userRatings[placeIndex];
     localStorage.setItem('userRatings', JSON.stringify(userRatings));
+  }
+  
+  // Generate a simple user ID for Firebase (or use anonymous)
+  function getUserId() {
+    let userId = localStorage.getItem('userId');
+    if (!userId) {
+      userId = 'user_' + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('userId', userId);
+    }
+    return userId;
   }
 
   // Bookmark/Mark tracking functions
@@ -772,7 +946,7 @@ map.on('load', () => {
   }
 
   // Handle rating submission via slider
-  document.addEventListener('change', (e) => {
+  document.addEventListener('change', async (e) => {
     if (e.target.classList.contains('vote-slider')) {
       const idx = parseInt(e.target.dataset.idx);
       const rating = parseFloat(e.target.value);
@@ -781,7 +955,7 @@ map.on('load', () => {
       const previousRating = getUserRating(idx);
       const isUpdate = previousRating !== null;
       
-      // If updating, remove the old rating from the array
+      // If updating, remove the old rating from the local array
       if (isUpdate) {
         const ratings = SAMPLE_PLACES[idx].communityRatings;
         const oldRatingIndex = ratings.indexOf(previousRating);
@@ -790,11 +964,21 @@ map.on('load', () => {
         }
       }
       
-      // Add the new rating
+      // Add the new rating to local array
       SAMPLE_PLACES[idx].communityRatings.push(rating);
       
-      // Save user's rating
+      // Save user's rating to localStorage
       saveUserRating(idx, rating);
+      
+      // Save rating to Firebase
+      const userId = getUserId();
+      const firebaseSaved = await saveRatingToFirebase(idx, rating, userId);
+      
+      if (firebaseSaved) {
+        console.log('✅ Rating saved to Firebase successfully');
+      } else {
+        console.warn('⚠️ Rating saved locally but not to Firebase');
+      }
       
       // Update map
       map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
