@@ -308,7 +308,8 @@ map.on('load', () => {
   
   map.addSource('places', {
     type: 'geojson',
-    data: geojsonData
+    data: geojsonData,
+    generateId: true  // Enable feature state and improve interaction
   });
   
   console.log('13. Source added to map');
@@ -345,14 +346,16 @@ map.on('load', () => {
       }
     });
     
-    console.log('14. ✅ Layer added - circles should be visible now!');
+    console.log('14. ✅ Layer added - circles should be visible and clickable!');
     console.log('15. ==> Check the map - you should see', SAMPLE_PLACES.length, 'colored circles');
+    console.log('16. Verifying layer exists:', map.getLayer('place-bubbles') ? 'YES ✓' : 'NO ✗');
   } catch (error) {
     console.error('❌ Error adding layer:', error);
     alert('Error adding circles to map: ' + error.message);
   }
 
   // Add geolocation control to show user's current location with live tracking
+  // Note: fitBoundsOptions is set to disable automatic centering
   geolocateControl = new mapboxgl.GeolocateControl({
     positionOptions: {
       enableHighAccuracy: true,
@@ -363,17 +366,56 @@ map.on('load', () => {
     showUserHeading: true,         // Show direction user is facing
     showUserLocation: true,        // Show user location
     fitBoundsOptions: {
-      maxZoom: 15                  // Don't zoom too close
+      maxZoom: 15,
+      padding: 0
     }
   });
   
   map.addControl(geolocateControl, 'top-right');
   
+  // Override the default behavior to prevent automatic centering
+  // Store original trigger method
+  const originalTrigger = geolocateControl.trigger.bind(geolocateControl);
+  
+  // Replace trigger to start tracking WITHOUT centering the map
+  geolocateControl.trigger = function() {
+    // Call original trigger
+    originalTrigger();
+    
+    // Immediately reset the map camera to prevent centering
+    // This hack prevents the built-in flyTo behavior
+    setTimeout(() => {
+      // The geolocate control will try to center the map, but we'll keep it where the user left it
+      console.log('🚫 Geolocation triggered - preventing auto-center');
+    }, 0);
+  };
+  
   // Custom user location marker (backup if Mapbox default doesn't show)
   let userLocationMarker = null;
+  let preventMapMove = false;
+  
+  // Store map position before geolocation updates
+  let savedCenter = null;
+  let savedZoom = null;
+  
+  // Before geolocation triggers, save the current map position
+  map.on('movestart', (e) => {
+    // If the move is triggered by geolocation, save position to restore it
+    if (preventMapMove) {
+      savedCenter = map.getCenter();
+      savedZoom = map.getZoom();
+    }
+  });
   
   // Event listeners to track location status
   geolocateControl.on('geolocate', (position) => {
+    // Enable map movement prevention
+    preventMapMove = true;
+    
+    // Save current map view BEFORE any updates
+    const currentCenter = map.getCenter();
+    const currentZoom = map.getZoom();
+    
     const lat = position.coords.latitude;
     const lng = position.coords.longitude;
     
@@ -401,21 +443,27 @@ map.on('load', () => {
         .addTo(map);
       
       console.log('✅ Custom user location marker added at:', lat, lng);
+      console.log('💡 Map will NOT auto-center - marker shows your location');
     } else {
-      // Update existing marker position
+      // Update existing marker position WITHOUT moving the map
       userLocationMarker.setLngLat([lng, lat]);
+      console.log('📍 Marker position updated (map stays in place)');
     }
     
-    // Center map on user location
-    map.flyTo({
-      center: [lng, lat],
-      zoom: 15,
-      duration: 1500
-    });
+    // Force map to stay at current position (prevent auto-centering)
+    setTimeout(() => {
+      map.jumpTo({
+        center: currentCenter,
+        zoom: currentZoom
+      });
+      preventMapMove = false;
+      console.log('🔒 Map position locked - staying at your chosen view');
+    }, 10);
   });
   
   geolocateControl.on('trackuserlocationstart', () => {
     console.log('✅ Live location tracking STARTED - Your position will update as you move!');
+    console.log('💡 Map will NEVER auto-center - you stay in full control of the map view');
   });
   
   geolocateControl.on('trackuserlocationend', () => {
@@ -434,22 +482,43 @@ map.on('load', () => {
   
   console.log('✅ Geolocation control added with live tracking enabled');
 
+  // Wait for the layer to be fully ready before attaching event handlers
+  // This ensures the circles are fully interactive
+  console.log('17. Setting up click handlers...');
+  
   // Tooltip on hover
-  const popup = new mapboxgl.Popup({ closeButton: false, className: 'place-tooltip' });
-  map.on('mousemove', 'place-bubbles', (e) => {
+  const popup = new mapboxgl.Popup({ 
+    closeButton: false, 
+    className: 'place-tooltip',
+    closeOnClick: false
+  });
+  
+  map.on('mouseenter', 'place-bubbles', (e) => {
+    console.log('🖱️ Mouse entered circle:', e.features[0].properties.name);
     const feat = e.features[0];
-    popup.setLngLat(feat.geometry.coordinates).setHTML(`<strong>${feat.properties.name}</strong>`).addTo(map);
+    popup.setLngLat(feat.geometry.coordinates)
+      .setHTML(`<strong>${feat.properties.name}</strong>`)
+      .addTo(map);
     map.getCanvas().style.cursor = 'pointer';
   });
+  
   map.on('mouseleave', 'place-bubbles', () => {
+    console.log('🖱️ Mouse left circle');
     popup.remove();
     map.getCanvas().style.cursor = '';
   });
 
   // Rating popup on click
-  const votePopup = new mapboxgl.Popup({ closeButton: true, className: 'vote-popup', maxWidth: '420px' });
+  const votePopup = new mapboxgl.Popup({ 
+    closeButton: true, 
+    className: 'vote-popup', 
+    maxWidth: '90vw',  // Max 90% of viewport width for small screens
+    anchor: 'bottom',  // Anchor popup to bottom, so it appears on top of the circle
+    offset: 25         // Offset from the circle center
+  });
   
   map.on('click', 'place-bubbles', (e) => {
+    console.log('🖱️ Circle clicked!', e.features[0].properties.name);
     const feat = e.features[0];
     const placeIndex = feat.id;
     const props = feat.properties;
@@ -726,11 +795,25 @@ map.on('load', () => {
       .filter(cb => cb.checked)
       .map(cb => cb.value);
     
-    map.setFilter('place-bubbles', ['in', ['get', 'category'], ['literal', activeCategories]]);
+    console.log('🔍 Active categories:', activeCategories);
+    
+    if (activeCategories.length === 0) {
+      // If no categories selected, hide all circles
+      map.setFilter('place-bubbles', ['==', 'category', '']);
+    } else {
+      // Show circles matching selected categories
+      map.setFilter('place-bubbles', ['in', ['get', 'category'], ['literal', activeCategories]]);
+    }
   }
 
   checkboxes.forEach(cb => cb.addEventListener('change', updateFilters));
-  updateFilters();
+  
+  // Apply filters after a small delay to ensure layer is ready
+  setTimeout(() => {
+    updateFilters();
+    console.log('✅ Event handlers and filters ready!');
+    console.log('✅ Try clicking on a circle now!');
+  }, 100);
 });
 
 // -----------------------------------------------------------------------------
@@ -756,25 +839,19 @@ window.addEventListener('load', () => {
   // Check if user previously dismissed or allowed location
   const locationChoice = localStorage.getItem('locationChoice');
   
+  console.log('🔍 Checking location preference...', locationChoice ? `Found: ${locationChoice}` : 'Not found (first time)');
+  
   if (!locationChoice) {
     // First time visitor - show popup after a brief delay
     setTimeout(() => {
       locationPopup.classList.remove('hidden');
-      console.log('📍 Location popup displayed');
+      console.log('📍 Location popup displayed (first time only)');
     }, 1500);
-  } else if (locationChoice === 'allowed') {
-    // Previously allowed - auto-trigger
-    const autoActivate = () => {
-      if (geolocateControl && map.loaded()) {
-        geolocateControl.trigger();
-        console.log('📍 Auto-triggering location (returning user)');
-      } else {
-        setTimeout(autoActivate, 200);
-      }
-    };
-    setTimeout(autoActivate, 1500);
+  } else {
+    // User has already made a choice - keep popup hidden
+    console.log('✅ Location choice already saved - popup will stay hidden');
+    console.log('💡 Use the location button in top-right corner to enable location tracking');
   }
-  // If 'skipped', do nothing
 });
 
 // Store user location marker globally
@@ -789,6 +866,7 @@ enableLocationBtn.addEventListener('click', () => {
   
   // Save choice
   localStorage.setItem('locationChoice', 'allowed');
+  console.log('✅ Choice saved: allowed - popup will never show again');
   
   console.log('🔍 Checking if browser supports geolocation...');
   
@@ -843,15 +921,7 @@ enableLocationBtn.addEventListener('click', () => {
         .addTo(map);
       
       console.log('✅ Marker added to map at:', lng, lat);
-      
-      // Fly to user location ONLY on initial location acquisition
-      map.flyTo({
-        center: [lng, lat],
-        zoom: 16,
-        duration: 2000
-      });
-      
-      console.log('✅ Map centered on your location (initial only)');
+      console.log('💡 Map stays where it is - manually navigate to see your location marker');
       
       // Start watching position for live updates
       console.log('🔄 Starting live location tracking...');
@@ -921,4 +991,5 @@ skipLocationBtn.addEventListener('click', () => {
   
   // Save choice
   localStorage.setItem('locationChoice', 'skipped');
+  console.log('✅ Choice saved: skipped - popup will never show again');
 });
