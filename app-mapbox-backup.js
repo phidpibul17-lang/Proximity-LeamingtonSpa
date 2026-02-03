@@ -1,7 +1,6 @@
 // =============================================================================
 // COMMUNITY MAP – Coventry City Centre (40+ Establishments)
 // =============================================================================
-
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1IjoiamluZ2xlYmFsc2giLCJhIjoiY21sMDVkdGkzMDl1NDNmcXVhaGV6cHpreSJ9.pzbGBwyH9MwjMngHktokAw';
 
 // Coventry city centre: actual coordinates
