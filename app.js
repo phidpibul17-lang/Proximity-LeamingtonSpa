@@ -4,7 +4,7 @@
 
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1IjoiamluZ2xlYmFsc2giLCJhIjoiY21sNm1yY2U3MDJkMDNmcjBneG5hN2RzbSJ9.S5GEGRibVdFnLfdzZIusHw';
 
-// Google Places API Key - Get yours at: https://console.cloud.google.com/google/maps-apis
+// Google Places API Key - Get yours at: https://console.cloud.google.com/google/maps-api
 // Enable "Places API" and "Maps JavaScript API"
 const GOOGLE_API_KEY = 'AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8'; // Replace with your own key for production
 
