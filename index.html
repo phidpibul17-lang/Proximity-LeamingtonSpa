@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leamington Spa Bars & Pubs Map</title>
+  
+  <!-- Mapbox GL JS CSS -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet" />
+  
+  <!-- Our custom CSS -->
+  <link href="styles.css" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- The Map Container -->
+  <div id="map"></div>
+
+  <!-- Location Permission Popup -->
+  <div id="location-popup" class="location-popup-overlay">
+    <div class="location-popup-content">
+      <div class="location-popup-icon">📍</div>
+      <h2>Know Where You Are</h2>
+      <p>See nearby bars, pubs, and restaurants around you!</p>
+      <button id="enable-location-btn" class="enable-location-btn">📍 Enable Location</button>
+      <button id="skip-location-btn" class="skip-location-btn">Skip for now</button>
+    </div>
+  </div>
+
+  <!-- Category Selector Sidebar -->
+  <div id="filter-sidebar" class="sidebar">
+    <button id="toggle-sidebar" class="toggle-btn">◀ Filter</button>
+    <div class="sidebar-content">
+      <h3>Bars & Pubs</h3>
+      <p class="subtitle">41 Places | Leamington Spa</p>
+      
+      <div class="filter-group">
+        <label><input type="checkbox" class="category-filter" value="bar" checked> 🍺 Bars</label>
+        <label><input type="checkbox" class="category-filter" value="pub" checked> 🍻 Pubs</label>
+        <label><input type="checkbox" class="category-filter" value="quick_munch" checked> 🍔 Quick Munch</label>
+      </div>
+
+      <div class="legend">
+        <p><small><strong>Circle size</strong> = Popularity</small></p>
+        <p><small><strong>Color scale:</strong> 1.0-5.0 (adaptive)</small></p>
+        <p><small>🟡 Yellow (low) → 🟠 Orange (mid) → 🔴 Red (high)</small></p>
+        <p><small><em>Auto-stretches for better contrast</em></small></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Google Maps JavaScript API with Places Library -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&libraries=places" async defer></script>
+  
+  <!-- Mapbox GL JS Library -->
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
+  
+  <!-- Our custom JavaScript -->
+  <script src="app.js"></script>
+  
+  <!-- 
+    NOTE: The popup shows REAL business photos from Google Places API.
+    The current API key is a demo key. For production use, get your own at:
+    https://console.cloud.google.com/google/maps-apis
+    Enable "Places API" and "Maps JavaScript API"
+    Then update the key in BOTH:
+    1. index.html (line 37) - Google Maps script tag
+    2. app.js (line 7) - GOOGLE_API_KEY constant
+  -->
+
+</body>
+</html>
