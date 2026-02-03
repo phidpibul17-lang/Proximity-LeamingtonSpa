@@ -19,7 +19,7 @@ body, html {
 /* Sidebar styling - PURPLE THEME */
 .sidebar {
   position: absolute;
-  top: 20px;
+  top: 70px;  /* Moved down to make room for location button */
   right: 0;
   width: 200px;
   height: auto;
@@ -40,7 +40,7 @@ body, html {
 @media (max-width: 768px) {
   .sidebar {
     width: 180px;
-    top: 10px;
+    top: 60px;  /* Adjusted for mobile */
   }
   
   .sidebar.collapsed {
@@ -58,7 +58,7 @@ body, html {
 @media (max-width: 480px) {
   .sidebar {
     width: 160px;
-    top: 10px;
+    top: 60px;  /* Adjusted for mobile */
   }
   
   .sidebar.collapsed {
@@ -722,21 +722,137 @@ body, html {
 /* =================================================================
    Geolocation Control Styling - Purple Theme
    ================================================================= */
+
+/* Label for geolocation button */
+.location-button-label {
+  position: absolute;
+  top: 10px;
+  right: 60px;  /* Position to the left of the bigger button */
+  background: linear-gradient(135deg, #2d1b69 0%, #1a0d2e 100%);
+  color: #e0d4ff;
+  padding: 12px 20px;
+  border-radius: 8px 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: -3px 3px 12px rgba(0, 0, 0, 0.5);
+  border: 2px solid #4c2a9f;
+  border-right: none;
+  z-index: 1;
+  white-space: nowrap;
+  pointer-events: none;  /* Clicks pass through to map */
+  transition: all 0.3s ease;
+}
+
+/* Arrow pointing to the button */
+.location-button-label::after {
+  content: '';
+  position: absolute;
+  right: -16px;  /* Position arrow at the right edge */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 16px solid #2d1b69;
+  border-top: 12px solid transparent;
+  border-bottom: 12px solid transparent;
+  filter: drop-shadow(2px 0 3px rgba(0, 0, 0, 0.3));
+}
+
+/* Arrow border for the pointing effect */
+.location-button-label::before {
+  content: '';
+  position: absolute;
+  right: -18px;  /* Slightly further for border effect */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 18px solid #4c2a9f;
+  border-top: 14px solid transparent;
+  border-bottom: 14px solid transparent;
+  z-index: -1;
+}
+
+@media (max-width: 768px) {
+  .location-button-label {
+    font-size: 14px;
+    padding: 10px 16px;
+    right: 55px;  /* Adjusted for bigger button */
+  }
+  
+  .location-button-label::after {
+    border-left-width: 14px;
+    border-top-width: 10px;
+    border-bottom-width: 10px;
+    right: -14px;
+  }
+  
+  .location-button-label::before {
+    border-left-width: 16px;
+    border-top-width: 12px;
+    border-bottom-width: 12px;
+    right: -16px;
+  }
+  
+  .mapboxgl-ctrl-geolocate {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  
+  .mapboxgl-ctrl-geolocate .mapboxgl-ctrl-icon {
+    background-size: 28px 28px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .location-button-label {
+    display: none;  /* Hide on very small screens */
+  }
+  
+  .mapboxgl-ctrl-geolocate {
+    width: 40px !important;
+    height: 40px !important;
+  }
+  
+  .mapboxgl-ctrl-geolocate .mapboxgl-ctrl-icon {
+    background-size: 26px 26px !important;
+  }
+}
+
 .mapboxgl-ctrl-geolocate {
   background-color: #2d1b69 !important;
   border: 2px solid #a855f7 !important;
+  width: 48px !important;  /* Make button bigger */
+  height: 48px !important;
+  border-radius: 6px !important;
 }
 
 .mapboxgl-ctrl-geolocate:hover {
   background-color: #3d2a7f !important;
+  transform: scale(1.05);
+  transition: all 0.2s ease;
+}
+
+.mapboxgl-ctrl-geolocate:hover ~ .location-button-label {
+  background: linear-gradient(135deg, #3d2a7f 0%, #2d1b69 100%);
+  border-color: #a855f7;
 }
 
 .mapboxgl-ctrl-geolocate .mapboxgl-ctrl-icon {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' viewBox='0 0 20 20' fill='%23a855f7'%3E%3Cpath d='M10 4C9 4 9 5 9 5v.1A5 5 0 0 0 5.1 9H5s-1 0-1 1 1 1 1 1h.1A5 5 0 0 0 9 14.9v.1s0 1 1 1 1-1 1-1v-.1a5 5 0 0 0 3.9-3.9h.1s1 0 1-1-1-1-1-1h-.1A5 5 0 0 0 11 5.1V5s0-1-1-1zm0 2.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 1 1 0-7z'/%3E%3Ccircle cx='10' cy='10' r='2' fill='%23a855f7'/%3E%3C/svg%3E") !important;
+  background-size: 32px 32px !important;  /* Scale up the icon */
+  background-position: center !important;
+}
+
+.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate-active {
+  background-color: #a855f7 !important;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.6) !important;
 }
 
 .mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate-active .mapboxgl-ctrl-icon {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' viewBox='0 0 20 20' fill='%239333ea'%3E%3Cpath d='M10 4C9 4 9 5 9 5v.1A5 5 0 0 0 5.1 9H5s-1 0-1 1 1 1 1 1h.1A5 5 0 0 0 9 14.9v.1s0 1 1 1 1-1 1-1v-.1a5 5 0 0 0 3.9-3.9h.1s1 0 1-1-1-1-1-1h-.1A5 5 0 0 0 11 5.1V5s0-1-1-1zm0 2.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 1 1 0-7z'/%3E%3Ccircle cx='10' cy='10' r='2' fill='%239333ea'/%3E%3C/svg%3E") !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' viewBox='0 0 20 20' fill='%23ffffff'%3E%3Cpath d='M10 4C9 4 9 5 9 5v.1A5 5 0 0 0 5.1 9H5s-1 0-1 1 1 1 1 1h.1A5 5 0 0 0 9 14.9v.1s0 1 1 1 1-1 1-1v-.1a5 5 0 0 0 3.9-3.9h.1s1 0 1-1-1-1-1-1h-.1A5 5 0 0 0 11 5.1V5s0-1-1-1zm0 2.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 1 1 0-7z'/%3E%3Ccircle cx='10' cy='10' r='2' fill='%23ffffff'/%3E%3C/svg%3E") !important;
+  background-size: 32px 32px !important;
+  background-position: center !important;
 }
 
 .mapboxgl-user-location-dot {
