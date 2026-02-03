@@ -373,22 +373,14 @@ map.on('load', () => {
   
   map.addControl(geolocateControl, 'top-right');
   
-  // Override the default behavior to prevent automatic centering
-  // Store original trigger method
-  const originalTrigger = geolocateControl.trigger.bind(geolocateControl);
+  // Add a label to the left of the geolocation button
+  const locationLabel = document.createElement('div');
+  locationLabel.className = 'location-button-label';
+  locationLabel.innerHTML = '📍 See your Live Location ->';
+  document.body.appendChild(locationLabel);
   
-  // Replace trigger to start tracking WITHOUT centering the map
-  geolocateControl.trigger = function() {
-    // Call original trigger
-    originalTrigger();
-    
-    // Immediately reset the map camera to prevent centering
-    // This hack prevents the built-in flyTo behavior
-    setTimeout(() => {
-      // The geolocate control will try to center the map, but we'll keep it where the user left it
-      console.log('🚫 Geolocation triggered - preventing auto-center');
-    }, 0);
-  };
+  console.log('📍 Geolocation control added to map - ready to be triggered');
+  console.log('✨ Location label added next to button');
   
   // Custom user location marker (backup if Mapbox default doesn't show)
   let userLocationMarker = null;
@@ -482,6 +474,37 @@ map.on('load', () => {
   
   console.log('✅ Geolocation control added with live tracking enabled');
 
+  // Auto-trigger location if user previously allowed it
+  // Increased delay to ensure everything is fully loaded
+  setTimeout(() => {
+    const locationChoice = localStorage.getItem('locationChoice');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔍 AUTO-TRIGGER CHECK');
+    console.log('   Location choice from localStorage:', locationChoice);
+    console.log('   Geolocate control exists:', !!geolocateControl);
+    console.log('   Map is loaded:', map.loaded());
+    
+    if (locationChoice === 'allowed') {
+      console.log('✅ CONDITIONS MET - AUTO-TRIGGERING LOCATION NOW!');
+      console.log('📍 Calling geolocateControl.trigger()...');
+      
+      try {
+        // Trigger the geolocation control to show live location
+        geolocateControl.trigger();
+        console.log('✅ ✅ ✅ SUCCESS! Trigger called successfully!');
+        console.log('💡 The blue pulsing location dot should appear on the map');
+        console.log('💡 Check your browser permissions if nothing appears');
+      } catch (error) {
+        console.error('❌ ERROR triggering geolocation:', error);
+        console.error('   Error details:', error.message, error.stack);
+      }
+    } else {
+      console.log('ℹ️ Location not previously allowed');
+      console.log('💡 User needs to click "Enable Location" or the location button');
+    }
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  }, 1500);
+
   // Wait for the layer to be fully ready before attaching event handlers
   // This ensures the circles are fully interactive
   console.log('17. Setting up click handlers...');
@@ -524,6 +547,25 @@ map.on('load', () => {
     const props = feat.properties;
     popup.remove();
     
+    // Center the map on the clicked circle with smooth animation
+    const coordinates = feat.geometry.coordinates.slice(); // Copy coordinates
+    console.log('📍 Centering map on:', coordinates);
+    
+    // Get viewport size for responsive centering
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+    
+    // Calculate offset to position popup optimally
+    // Popup appears above the circle, so we offset downward to bring circle up
+    const verticalOffset = viewportHeight > 600 ? 150 : 100; // More offset on larger screens
+    
+    // Smoothly pan map to center on the clicked location
+    map.easeTo({
+      center: coordinates,
+      duration: 600, // 600ms smooth animation
+      offset: [0, verticalOffset] // Offset downward so circle moves up and popup has space above
+    });
+    
     const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(props.name + ' Leamington Spa')}`;
     const googleImagesUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(props.name + ' Leamington Spa')}`;
     
@@ -537,8 +579,9 @@ map.on('load', () => {
     const markButtonText = isMarked ? '⭐ Marked' : '☆ Mark Place';
     const markButtonClass = isMarked ? 'mark-button marked' : 'mark-button';
     
-    // Show popup with loading state
-    votePopup.setLngLat(feat.geometry.coordinates).setHTML(`
+    // Show popup with loading state (after a tiny delay to let centering start)
+    setTimeout(() => {
+      votePopup.setLngLat(coordinates).setHTML(`
       <div class="vote-panel">
         <h3>${props.name}</h3>
         
@@ -565,22 +608,23 @@ map.on('load', () => {
         ${previousRating !== null ? '<p class="previous-rating">Your rating: ⭐ ' + previousRating.toFixed(1) + '</p>' : ''}
       </div>
     `).addTo(map);
-    
-    // Display photos with Google Images link (Option A - no API required)
-    displayPlacePhotos(props.name, props.lat, props.lng, (photoUrls) => {
-      const gallery = document.getElementById(`photo-gallery-${placeIndex}`);
-      if (!gallery) return;
       
-      // Show clean interface with photo search button
-      gallery.innerHTML = `
-        <div class="photo-fallback">
-          <div class="fallback-icon">📸</div>
-          <a href="${googleImagesUrl}" target="_blank" class="view-photos-button">
-            🔍 View Photos on Google
-          </a>
-        </div>
-      `;
-    });
+      // Display photos with Google Images link (Option A - no API required)
+      displayPlacePhotos(props.name, props.lat, props.lng, (photoUrls) => {
+        const gallery = document.getElementById(`photo-gallery-${placeIndex}`);
+        if (!gallery) return;
+        
+        // Show clean interface with photo search button
+        gallery.innerHTML = `
+          <div class="photo-fallback">
+            <div class="fallback-icon">📸</div>
+            <a href="${googleImagesUrl}" target="_blank" class="view-photos-button">
+              🔍 View Photos on Google
+            </a>
+          </div>
+        `;
+      });
+    }, 100); // Small delay to let map centering animation start
   });
 
   // Photo carousel navigation
@@ -850,12 +894,13 @@ window.addEventListener('load', () => {
   } else {
     // User has already made a choice - keep popup hidden
     console.log('✅ Location choice already saved - popup will stay hidden');
-    console.log('💡 Use the location button in top-right corner to enable location tracking');
+    if (locationChoice === 'allowed') {
+      console.log('💡 Live location will auto-activate once map is loaded');
+    } else {
+      console.log('💡 Use the location button in top-right corner to enable location tracking');
+    }
   }
 });
-
-// Store user location marker globally
-let userMarker = null;
 
 // Handle "Enable Location" button click
 enableLocationBtn.addEventListener('click', () => {
@@ -881,105 +926,19 @@ enableLocationBtn.addEventListener('click', () => {
   console.log('⏳ Requesting your location...');
   console.log('💡 A permission popup should appear - click "Allow"');
   
-  // Use browser's geolocation API directly
-  navigator.geolocation.getCurrentPosition(
-    // Success callback
-    (position) => {
-      const lat = position.coords.latitude;
-      const lng = position.coords.longitude;
-      const accuracy = position.coords.accuracy;
-      
-      console.log('🎉 SUCCESS! Got your location:');
-      console.log('   Latitude:', lat);
-      console.log('   Longitude:', lng);
-      console.log('   Accuracy:', accuracy + 'm');
-      
-      // Remove old marker if exists
-      if (userMarker) {
-        userMarker.remove();
-      }
-      
-      // Create a clean user location marker
-      const el = document.createElement('div');
-      el.className = 'user-location-marker';
-      el.style.width = '40px';
-      el.style.height = '40px';
-      el.style.display = 'flex';
-      el.style.alignItems = 'center';
-      el.style.justifyContent = 'center';
-      el.style.fontSize = '40px';
-      el.style.cursor = 'pointer';
-      el.style.filter = 'drop-shadow(0 0 10px rgba(168, 85, 247, 0.8))';
-      el.innerHTML = '📍';
-      
-      // Add marker to map
-      userMarker = new mapboxgl.Marker({
-        element: el,
-        draggable: false
-      })
-        .setLngLat([lng, lat])
-        .addTo(map);
-      
-      console.log('✅ Marker added to map at:', lng, lat);
-      console.log('💡 Map stays where it is - manually navigate to see your location marker');
-      
-      // Start watching position for live updates
-      console.log('🔄 Starting live location tracking...');
-      console.log('💡 Map will NOT auto-center on position updates - only marker moves');
-      
-      const watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          const newLat = position.coords.latitude;
-          const newLng = position.coords.longitude;
-          
-          console.log('📍 Position updated:', newLat, newLng, '(map stays put)');
-          
-          // Update marker position WITHOUT centering map
-          if (userMarker) {
-            userMarker.setLngLat([newLng, newLat]);
-          }
-        },
-        (error) => {
-          console.error('❌ Watch position error:', error.message);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 0
-        }
-      );
-      
-      console.log('✅ Live tracking started (watch ID:', watchId + ')');
-    },
-    // Error callback
-    (error) => {
-      console.error('❌ Geolocation error:', error.message);
-      
-      let errorMsg = '';
-      switch(error.code) {
-        case error.PERMISSION_DENIED:
-          errorMsg = 'You denied location permission.\n\nTo enable:\n1. Click the location icon in your browser\'s address bar\n2. Select "Allow"';
-          break;
-        case error.POSITION_UNAVAILABLE:
-          errorMsg = 'Location information is unavailable.\n\nPlease check:\n1. Location services are enabled on your device\n2. You have internet connection';
-          break;
-        case error.TIMEOUT:
-          errorMsg = 'Location request timed out.\n\nPlease try again.';
-          break;
-        default:
-          errorMsg = 'An unknown error occurred: ' + error.message;
-      }
-      
-      alert('❌ Location Error\n\n' + errorMsg);
-      console.error('Error details:', error);
-    },
-    // Options
-    {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0
+  // Trigger the Mapbox geolocation control to show the live location icon
+  const triggerMapboxLocation = () => {
+    if (geolocateControl && map.loaded()) {
+      console.log('🎯 Activating Mapbox live location icon...');
+      geolocateControl.trigger();
+      console.log('✅ Live location icon enabled - tracking your position in real-time');
+      console.log('💡 Blue pulsing dot shows your location on the map');
+      console.log('💡 Map will NOT auto-center - you stay in control');
+    } else {
+      setTimeout(triggerMapboxLocation, 200);
     }
-  );
+  };
+  triggerMapboxLocation();
 });
 
 // Handle "Skip" button click
@@ -993,3 +952,21 @@ skipLocationBtn.addEventListener('click', () => {
   localStorage.setItem('locationChoice', 'skipped');
   console.log('✅ Choice saved: skipped - popup will never show again');
 });
+
+// Debug function: manually trigger location from console
+// Type "triggerLocationManually()" in browser console to test
+window.triggerLocationManually = function() {
+  console.log('🔧 MANUAL TRIGGER TEST');
+  console.log('   geolocateControl exists:', !!geolocateControl);
+  console.log('   map.loaded():', map.loaded());
+  
+  if (geolocateControl) {
+    console.log('✅ Calling geolocateControl.trigger()...');
+    geolocateControl.trigger();
+    console.log('✅ Trigger called! Check if location icon appears.');
+  } else {
+    console.error('❌ geolocateControl is not defined yet!');
+  }
+};
+
+console.log('💡 Debug tip: Type triggerLocationManually() in console to test location trigger');
