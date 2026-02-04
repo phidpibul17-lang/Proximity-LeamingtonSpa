@@ -763,8 +763,12 @@ map.on('load', () => {
   map.on('mouseenter', 'place-bubbles', (e) => {
     console.log('🖱️ Mouse entered circle:', e.features[0].properties.name);
     const feat = e.features[0];
+    
+    // Format category name nicely
+    const categoryLabel = feat.properties.category.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+    
     popup.setLngLat(feat.geometry.coordinates)
-      .setHTML(`<strong>${feat.properties.name}</strong>`)
+      .setHTML(`<strong>${feat.properties.name}</strong> <span style="color: #b8a3e8;">(${categoryLabel})</span>`)
       .addTo(map);
     map.getCanvas().style.cursor = 'pointer';
   });
@@ -823,11 +827,14 @@ map.on('load', () => {
     const markButtonText = isMarked ? '⭐ Marked' : '☆ Mark Place';
     const markButtonClass = isMarked ? 'mark-button marked' : 'mark-button';
     
+    // Format category name nicely
+    const categoryLabel = props.category.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+    
     // Show popup with loading state (after a tiny delay to let centering start)
     setTimeout(() => {
       votePopup.setLngLat(coordinates).setHTML(`
       <div class="vote-panel">
-        <h3>${props.name}</h3>
+        <h3>${props.name} <span class="place-category">(${categoryLabel})</span></h3>
         
         <!-- Photo Gallery -->
         <div class="place-photos" id="photo-gallery-${placeIndex}">
