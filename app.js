@@ -1048,24 +1048,46 @@ map.on('load', () => {
   // FILTER LOGIC
   // ---------------------------------------------------------------------------
   const checkboxes = document.querySelectorAll('.category-filter');
+  const showMarkedOnlyCheckbox = document.getElementById('show-marked-only');
   
   function updateFilters() {
     const activeCategories = Array.from(checkboxes)
       .filter(cb => cb.checked)
       .map(cb => cb.value);
     
+    const showMarkedOnly = showMarkedOnlyCheckbox ? showMarkedOnlyCheckbox.checked : false;
+    
     console.log('🔍 Active categories:', activeCategories);
+    console.log('⭐ Show marked only:', showMarkedOnly);
+    
+    // Build the filter based on category and marked status
+    let filter;
     
     if (activeCategories.length === 0) {
       // If no categories selected, hide all circles
-      map.setFilter('place-bubbles', ['==', 'category', '']);
+      filter = ['==', 'category', ''];
     } else {
-      // Show circles matching selected categories
-      map.setFilter('place-bubbles', ['in', ['get', 'category'], ['literal', activeCategories]]);
+      // Base filter: show circles matching selected categories
+      const categoryFilter = ['in', ['get', 'category'], ['literal', activeCategories]];
+      
+      if (showMarkedOnly) {
+        // Additional filter: only show marked places
+        filter = ['all', categoryFilter, ['==', ['get', 'isMarked'], true]];
+      } else {
+        // Just category filter
+        filter = categoryFilter;
+      }
     }
+    
+    map.setFilter('place-bubbles', filter);
   }
 
   checkboxes.forEach(cb => cb.addEventListener('change', updateFilters));
+  
+  // Add event listener for "Only Marked" checkbox
+  if (showMarkedOnlyCheckbox) {
+    showMarkedOnlyCheckbox.addEventListener('change', updateFilters);
+  }
   
   // Apply filters after a small delay to ensure layer is ready
   setTimeout(() => {
