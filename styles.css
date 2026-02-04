@@ -144,6 +144,26 @@ body, html {
   line-height: 1.4;
 }
 
+.marked-filter {
+  margin-top: 15px;
+  padding-top: 10px;
+  border-top: 1px solid #4c2a9f;
+}
+
+.marked-filter label {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #e0d4ff;
+  font-weight: 600;
+}
+
+.marked-filter input[type="checkbox"] {
+  cursor: pointer;
+}
+
 /* Tooltip (Hover) - PURPLE THEME */
 .place-tooltip .mapboxgl-popup-content {
   padding: 8px 12px;
