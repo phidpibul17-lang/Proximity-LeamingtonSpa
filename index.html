@@ -17,7 +17,7 @@
   <div id="map"></div>
 
   <!-- Location Permission Popup -->
-  <div id="location-popup" class="location-popup-overlay hidden">
+  <div id="location-popup" class="location-popup-overlay">
     <div class="location-popup-content">
       <div class="location-popup-icon">📍</div>
       <h2>Know Where You Are</h2>
@@ -31,7 +31,7 @@
   <div id="filter-sidebar" class="sidebar">
     <button id="toggle-sidebar" class="toggle-btn">◀ Filter</button>
     <div class="sidebar-content">
-      <h3>Leam Bar Crawler</h3>
+      <h3>Bars & Pubs</h3>
       <p class="subtitle">41 Places | Leamington Spa</p>
       
       <div class="filter-group">
@@ -42,8 +42,9 @@
 
       <div class="legend">
         <p><small><strong>Circle size</strong> = Popularity</small></p>
-        <p><small><strong>Color scale </strong> 🟡->🔴 </small></p>
-        <p><small>= Average Rating 1->5 (Adaptive)</small></p>
+        <p><small><strong>Color scale:</strong> 1.0-5.0 (adaptive)</small></p>
+        <p><small>🟡 Yellow (low) → 🟠 Orange (mid) → 🔴 Red (high)</small></p>
+        <p><small><em>Auto-stretches for better contrast</em></small></p>
       </div>
     </div>
   </div>
@@ -54,7 +55,7 @@
   <!-- Mapbox GL JS Library -->
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
   
-  <!-- Firebase SDK -->
+  <!-- Firebase SDK (v10.7.1 - Compat mode for easier integration) -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   
