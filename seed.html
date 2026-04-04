@@ -1,1 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firestore Seeder — Proximity Leamington Spa</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Courier New', monospace; background: #0d0620; color: #b8a3e8; padding: 24px; min-height: 100vh; }
+    h1 { color: #a855f7; font-size: 22px; margin-bottom: 6px; }
+    .subtitle { color: #6b4fa0; font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    button {
+      padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px;
+      font-weight: 600; cursor: pointer; transition: all 0.2s;
+    }
+    #seed-btn    { background: #a855f7; color: white; }
+    #seed-btn:hover { background: #9333ea; }
+    #seed-btn:disabled { background: #4c2a9f; color: #7c5cbf; cursor: not-allowed; }
+    #check-btn   { background: #1a0d2e; color: #a855f7; border: 1px solid #4c2a9f; }
+    #check-btn:hover { border-color: #a855f7; }
+    #clear-btn   { background: #1a0d2e; color: #f87171; border: 1px solid #7f1d1d; }
+    #clear-btn:hover { background: #450a0a; }
+    .progress-wrap { background: #1a0d2e; border: 1px solid #4c2a9f; border-radius: 6px; height: 14px; margin-bottom: 8px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #a855f7); transition: width 0.4s; width: 0%; }
+    #status { font-size: 13px; color: #6b4fa0; margin-bottom: 12px; min-height: 18px; }
+    #log {
+      background: #06030f; border: 1px solid #2d1b69; border-radius: 8px;
+      padding: 14px; height: 480px; overflow-y: auto;
+      white-space: pre-wrap; font-size: 12px; line-height: 1.6;
+    }
+    .ok   { color: #4ade80; }
+    .warn { color: #facc15; }
+    .err  { color: #f87171; font-weight: bold; }
+    .info { color: #60a5fa; }
+    #gmap-container { width: 1px; height: 1px; position: fixed; top: -9999px; left: -9999px; }
+  </style>
+</head>
+<body>
+
+<h1>🔥 Firestore Seeder</h1>
+<p class="subtitle">
+  Writes all 40 places to Firestore, fetches up to 3 Google Places photos and 3 reviews each.<br>
+  <strong>Must be served via http:// or https://</strong> — open from VS Code Live Server or
+  run <code>npx serve .</code> in the project folder, then visit the URL it shows.
+</p>
+
+<div class="btn-row">
+  <button id="seed-btn">🌱 Seed / Refresh All Places</button>
+  <button id="check-btn">🔍 Check Existing Data</button>
+  <button id="clear-btn">🗑️ Clear Places Collection</button>
+</div>
+
+<div class="progress-wrap"><div class="progress-fill" id="progress-fill"></div></div>
+<div id="status">Ready. Press "Seed / Refresh All Places" to start.</div>
+<div id="log"></div>
+
+<!-- Hidden map div — PlacesService requires a real rendered map -->
+<div id="gmap-container"><div id="gmap"></div></div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<!-- Google Maps — callback sets flag when fully loaded -->
+<script>
+  window._mapsReady = false;
+  window._mapsError = false;
+  window.initMaps   = function () { window._mapsReady = true; };
+  // Called by Google Maps when the API key is invalid or unauthorised
+  window.gm_authFailure = function () {
+    window._mapsError = true;
+    const logEl = document.getElementById('log');
+    if (logEl) {
+      const el = document.createElement('div');
+      el.className = 'err';
+      el.textContent = '[AUTH] ❌ Google Maps API key error — check the key is unrestricted for this domain and that the Places API is enabled in Google Cloud Console.';
+      logEl.appendChild(el);
+    }
+    document.getElementById('status').textContent = '❌ Maps API auth failure — see log';
+  };
+</script>
+<script async
+  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCHFMEjbSQDWW92aBxtnNSygJ7nPL9Zsrs&libraries=places&callback=initMaps">
+</script>
+
+<script>
+// ── Firebase ──────────────────────────────────────────────────────────────
+let db;
+try {
+  firebase.initializeApp({
+    apiKey:            "AIzaSyDFpSkI3YoYE03HUL9Ki_R-o8AsYULekhM",
+    authDomain:        "proximity-leamingtonspa.firebaseapp.com",
+    projectId:         "proximity-leamingtonspa",
+    storageBucket:     "proximity-leamingtonspa.firebasestorage.app",
+    messagingSenderId: "342370019248",
+    appId:             "1:342370019248:web:b73019ec57da5b2c4c9875"
+  });
+  db = firebase.firestore();
+} catch (e) {
+  document.getElementById('status').textContent = '❌ Firebase init failed — see browser console';
+  console.error('Firebase init error:', e);
+}
+
+// ── Place list (mirrors SAMPLE_PLACES in app.js) ─────────────────────────
+const PLACES = [
+  // PUBS (12)
+  { name: 'The Fat Pug',                  category: 'pub',         lng: -1.5483250968291211, lat: 52.292353365642995,  googleRating: 4.5, googleReviewCount: 1200,  description: 'Neighbourhood pub & kitchen serving craft beers and seasonal British food in a relaxed, dog-friendly setting.' },
+  { name: 'The Star & Garter',            category: 'pub',         lng: -1.5419863867000403, lat: 52.29171471496728,   googleRating: 4.3, googleReviewCount: 1456,  description: 'Charming gastropub offering fresh seasonal food, quality drinks, and a warm atmosphere.' },
+  { name: 'The Woodland Tavern',          category: 'pub',         lng: -1.5417834586726358, lat: 52.29030367225721,   googleRating: 4.4, googleReviewCount: 890,   description: 'Traditional British pub in the heart of Leamington Spa with real ale, cider, and cocktails.' },
+  { name: 'Fizzy Moon Brewhouse & Grill', category: 'pub',         lng: -1.5378148579285407, lat: 52.29028365050496,   googleRating: 4.6, googleReviewCount: 2100,  description: 'Award-winning craft brewery & grill with over 147 gins, microbrewery, and board games. Best Bar in Warwickshire 2018-2023.' },
+  { name: 'The White Horse',              category: 'pub',         lng: -1.5380624571070052, lat: 52.293472963201815,  googleRating: 4.4, googleReviewCount: 734,   description: 'Historic pub dating back to the 1830s with courtyard beer garden, cask ales, and hearty British fare.' },
+  { name: 'Copper Pot',                   category: 'pub',         lng: -1.537273160042559,  lat: 52.29198660532184,   googleRating: 4.1, googleReviewCount: 677,   description: 'Quaint local pub serving traditional pub food with global influences, and an extensive gin & whiskey collection.' },
+  { name: 'The Benjamin Satchwell - JD Wetherspoon', category: 'pub',         lng: -1.5355806474284965, lat: 52.2897581971137,    googleRating: 4.1, googleReviewCount: 2345,  description: 'JD Wetherspoon pub offering great value food and drink with up to 6 rotating guest ales.' },
+  { name: 'The Cricketers',               category: 'pub',         lng: -1.5413251786332782, lat: 52.28746759003736,   googleRating: 4.2, googleReviewCount: 560,   description: 'Traditional sports pub showing live matches with a friendly atmosphere and classic pub menu.' },
+  { name: 'The Royal Pug',                category: 'pub',         lng: -1.5325717850002718, lat: 52.29064916684562,   googleRating: 4.3, googleReviewCount: 820,   description: 'Sister venue to The Fat Pug, offering craft beers, artisan pizzas, and a welcoming community vibe.' },
+  { name: 'The Somerville Arms',          category: 'pub',         lng: -1.5256116072833938, lat: 52.29356825508984,   googleRating: 4.0, googleReviewCount: 450,   description: 'Cosy neighbourhood pub with real ales, live music nights, and home-cooked traditional food.' },
+  { name: 'Newbold Comyn Arms',           category: 'pub',         lng: -1.5176443757122406, lat: 52.29128375016172,   googleRating: 4.4, googleReviewCount: 980,   description: 'Country pub near Newbold Comyn park with large beer garden, family-friendly menu, and real ales.' },
+  { name: 'The Micro Pug',                category: 'pub',         lng: -1.5313353459181338, lat: 52.282321824519315,  googleRating: 4.5, googleReviewCount: 650,   description: 'Intimate micropub specializing in craft beers, ciders, and continental lagers with a rotating selection.' },
+  // BARS (9)
+  { name: 'The Boiler Room',              category: 'bar',         lng: -1.5335054731671336, lat: 52.28642522734864,   googleRating: 4.7, googleReviewCount: 890,   description: 'Independent ale, craft beer, wine and spirits bar with industrial-themed decor and artisan pizzas.' },
+  { name: 'Nomad',                        category: 'bar',         lng: -1.5379807464325717, lat: 52.29173042689143,   googleRating: 4.2, googleReviewCount: 420,   description: 'Eclectic cocktail bar with global influences, creative drinks, and a vibrant nightlife atmosphere.' },
+  { name: 'HART + CO',                    category: 'bar',         lng: -1.537597391406729,  lat: 52.28932207687761,   googleRating: 4.5, googleReviewCount: 1100,  description: 'Quirky cocktail and dining venue with creative drinks, craft beers, and all-day breakfast & brunch.' },
+  { name: 'Bedford Street Bar',           category: 'bar',         lng: -1.5368837660452808, lat: 52.29142834652886,   googleRating: 4.6, googleReviewCount: 780,   description: 'Jazz eatery and live music venue with cocktails, garden terrace, and live performances 5 days a week.' },
+  { name: 'Wildes Bar & Cocktails',       category: 'bar',         lng: -1.5357718663290163, lat: 52.293227721200026,  googleRating: 4.3, googleReviewCount: 540,   description: 'Sophisticated cocktail bar specializing in craft cocktails, premium spirits, and intimate atmosphere.' },
+  { name: 'The House',                    category: 'bar',         lng: -1.5354953001787677, lat: 52.28920269548885,   googleRating: 4.1, googleReviewCount: 380,   description: 'Modern bar with DJ nights, extensive drinks menu, and stylish interior perfect for weekend nights out.' },
+  { name: 'Grace & Vine',                 category: 'bar',         lng: -1.5349349431810593, lat: 52.29324634036733,   googleRating: 4.4, googleReviewCount: 620,   description: 'Wine bar and bistro offering carefully curated wines, small plates, and elegant setting.' },
+  { name: 'The Clarendon',                category: 'bar',         lng: -1.5330505189875396, lat: 52.293648883578804,  googleRating: 4.1, googleReviewCount: 312,   description: 'Traditional bar with modern touches, craft beers, cocktails, and regular events.' },
+  { name: "Kelsey's Live",                category: 'bar',         lng: -1.533351367166442,  lat: 52.28419598357414,   googleRating: 4.2, googleReviewCount: 678,   description: 'Live music venue and bar featuring local bands, tribute acts, and a full American-style grill menu.' },
+  // QUICK MUNCH (19)
+  { name: 'Tesco Express',                category: 'quick_munch', lng: -1.5364780557056392, lat: 52.29265857066673,   googleRating: 3.8, googleReviewCount: 450,   description: 'Convenient supermarket for quick groceries, meal deals, and essentials in the town centre.' },
+  { name: 'Perifinos',                    category: 'quick_munch', lng: -1.5364510895675096, lat: 52.29173417453382,   googleRating: 4.5, googleReviewCount: 890,   description: 'Family-run Greek restaurant serving authentic Mediterranean cuisine, grilled meats, and mezze.' },
+  { name: 'Oodles Wok',                   category: 'quick_munch', lng: -1.5328905704706728, lat: 52.29196869019011,   googleRating: 4.2, googleReviewCount: 560,   description: 'Fast-casual Asian eatery with customizable stir-fry bowls, noodles, and rice dishes.' },
+  { name: "Domino's Pizza",               category: 'quick_munch', lng: -1.5328968138769303, lat: 52.29046502439148,   googleRating: 3.9, googleReviewCount: 1200,  description: 'Popular pizza delivery and takeaway chain with classic favorites and new creations.' },
+  { name: 'The Magic Wingdom',            category: 'quick_munch', lng: -1.5356377026792154, lat: 52.28814718952832,   googleRating: 4.6, googleReviewCount: 720,   description: 'Chicken wing specialists offering buffalo, BBQ, Korean, and unique sauce flavours.' },
+  { name: 'Viallis Fast Food',            category: 'quick_munch', lng: -1.5332720606520582, lat: 52.28586559475257,   googleRating: 4.0, googleReviewCount: 380,   description: 'Local fast food joint serving burgers, fried chicken, wraps, and loaded fries.' },
+  { name: 'Plan Burrito',                 category: 'quick_munch', lng: -1.5342741942203602, lat: 52.28810543465244,   googleRating: 4.3, googleReviewCount: 650,   description: 'Fresh Mexican food made to order with burritos, tacos, nachos, and customizable toppings.' },
+  { name: 'Libertine Burger',             category: 'quick_munch', lng: -1.5331020874160668, lat: 52.29228864767558,   googleRating: 4.5, googleReviewCount: 980,   description: 'American burger restaurant with gourmet patties, loaded fries, and craft beers.' },
+  { name: 'Grounded Kitchen',             category: 'quick_munch', lng: -1.5339201595428065, lat: 52.29199381450786,   googleRating: 4.7, googleReviewCount: 840,   description: 'Health-focused café serving fresh salads, smoothie bowls, sandwiches, and specialty coffee.' },
+  { name: 'Sombrero Mexican Food',        category: 'quick_munch', lng: -1.5366872733700407, lat: 52.290448962623444,  googleRating: 4.2, googleReviewCount: 530,   description: 'Authentic Mexican street food with tacos, quesadillas, and vibrant flavours.' },
+  { name: 'Wingers Leamington',           category: 'quick_munch', lng: -1.5343711217449412, lat: 52.28964317479163,   googleRating: 4.4, googleReviewCount: 670,   description: 'Chicken wing bar with a wide variety of sauces, sides, and combo meals.' },
+  { name: 'Halikarnas Kebab Shop',        category: 'quick_munch', lng: -1.5369741335640021, lat: 52.29038897602431,   googleRating: 4.1, googleReviewCount: 490,   description: 'Turkish kebab shop offering doner, shish, and mixed grills with fresh salads.' },
+  { name: 'Otto Kitchen',                 category: 'quick_munch', lng: -1.5376197233544657, lat: 52.29029526751353,   googleRating: 4.5, googleReviewCount: 710,   description: 'Contemporary kitchen serving gourmet pizzas, pasta, and Italian street food.' },
+  { name: 'Sakarya Kebab House',          category: 'quick_munch', lng: -1.5315291862142169, lat: 52.28340092519625,   googleRating: 4.0, googleReviewCount: 420,   description: 'Traditional Turkish kebab house with authentic recipes and friendly service.' },
+  { name: 'Kebab Shack',                  category: 'quick_munch', lng: -1.5334667687370458, lat: 52.28363138390546,   googleRating: 3.9, googleReviewCount: 380,   description: 'Late-night kebab spot perfect for post-pub munchies with generous portions.' },
+  { name: 'Fried House',                  category: 'quick_munch', lng: -1.531608084727317,  lat: 52.28379599055207,   googleRating: 4.2, googleReviewCount: 510,   description: 'Fried chicken specialists with crispy coating, spicy options, and combo meals.' },
+  { name: 'Silk & Spice Indian Takeaway', category: 'quick_munch', lng: -1.5302480695146856, lat: 52.28386079808041,   googleRating: 4.4, googleReviewCount: 820,   description: 'Indian takeaway serving traditional curries, biryanis, and tandoori dishes with authentic spices.' },
+  { name: 'Craving',                      category: 'quick_munch', lng: -1.5326128284124891, lat: 52.2851303895961,    googleRating: 4.3, googleReviewCount: 590,   description: 'Dessert café specializing in waffles, crepes, milkshakes, and indulgent sweet treats.' },
+  { name: "McDonald's",                   category: 'quick_munch', lng: -1.5360647256819873, lat: 52.29233137934563,   googleRating: 3.7, googleReviewCount: 2100,  description: 'Fast food chain serving burgers, fries, breakfast, and Happy Meals with quick service.' }
+];
+
+// ── Log helpers ───────────────────────────────────────────────────────────
+const logEl = document.getElementById('log');
+
+function log(msg, cls = '') {
+  const el = document.createElement('div');
+  if (cls) el.className = cls;
+  el.textContent = `[${new Date().toTimeString().slice(0, 8)}]  ${msg}`;
+  logEl.appendChild(el);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setProgress(pct, status) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('status').textContent = status;
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Wait for Google Maps to load, with a 15-second timeout and clear error
+function waitForMaps() {
+  return new Promise((resolve, reject) => {
+    if (window._mapsReady) return resolve();
+    if (window._mapsError) return reject(new Error('API key auth failure'));
+
+    const start = Date.now();
+    const t = setInterval(() => {
+      if (window._mapsReady) {
+        clearInterval(t);
+        return resolve();
+      }
+      if (window._mapsError) {
+        clearInterval(t);
+        return reject(new Error('API key auth failure'));
+      }
+      if (Date.now() - start > 15000) {
+        clearInterval(t);
+        reject(new Error(
+          'Google Maps timed out after 15 s.\n' +
+          'Most common cause: this page is open via file:// instead of http://.\n' +
+          'Fix: in VS Code right-click seed.html → "Open with Live Server".\n' +
+          'Or run:  npx serve .  in the project folder.'
+        ));
+      }
+    }, 200);
+  });
+}
+
+// ── Fetch photos + reviews for one place ─────────────────────────────────
+function fetchPlaceDetails(service, place) {
+  return new Promise(resolve => {
+    // Step 1 — find place_id
+    service.findPlaceFromQuery({
+      query: `${place.name} Leamington Spa`,
+      fields: ['place_id', 'name'],
+      locationBias: {
+        center: { lat: place.lat, lng: place.lng },
+        radius: 400
+      }
+    }, (results, status) => {
+      if (status !== google.maps.places.PlacesServiceStatus.OK || !results?.length) {
+        log(`  ⚠ Not found in Places API (status: ${status}): ${place.name}`, 'warn');
+        return resolve({ photoUrls: [], reviews: [], googlePlaceId: null });
+      }
+
+      const placeId = results[0].place_id;
+
+      // Step 2 — get photos + reviews
+      service.getDetails({
+        placeId,
+        fields: ['photos', 'reviews']
+      }, (details, detailStatus) => {
+        if (detailStatus !== google.maps.places.PlacesServiceStatus.OK || !details) {
+          log(`  ⚠ Details failed (status: ${detailStatus}): ${place.name}`, 'warn');
+          return resolve({ photoUrls: [], reviews: [], googlePlaceId: placeId });
+        }
+
+        // Photos are already in Google Maps display order — take the first 3
+        const photoUrls = (details.photos || [])
+          .slice(0, 3)
+          .map(p => p.getUrl({ maxWidth: 800, maxHeight: 560 }));
+
+        // Sort reviews newest-first using the Unix timestamp, then take top 3
+        const reviews = (details.reviews || [])
+          .sort((a, b) => (b.time || 0) - (a.time || 0))
+          .slice(0, 3)
+          .map(r => ({
+            author: r.author_name               || 'Anonymous',
+            text:   r.text                      || '',
+            rating: r.rating                    || 0,
+            time:   r.relative_time_description || ''
+          }));
+
+        log(`  ✓ ${place.name} — ${photoUrls.length} photo(s), ${reviews.length} review(s)`, 'ok');
+        resolve({ photoUrls, reviews, googlePlaceId: placeId });
+      });
+    });
+  });
+}
+
+// ── SEED button ────────────────────────────────────────────────────────────
+document.getElementById('seed-btn').addEventListener('click', async () => {
+  if (!db) { log('❌ Firebase not ready — cannot seed.', 'err'); return; }
+
+  const btn = document.getElementById('seed-btn');
+  btn.disabled = true;
+  logEl.innerHTML = '';
+  setProgress(0, 'Starting…');
+
+  // ── Step 1: check Firebase connection ────────────────────────────────
+  log('🔥 Testing Firestore connection…', 'info');
+  try {
+    await db.collection('_ping').doc('test').set({ ts: firebase.firestore.FieldValue.serverTimestamp() });
+    await db.collection('_ping').doc('test').delete();
+    log('  ✓ Firestore read/write OK', 'ok');
+  } catch (e) {
+    log(`  ❌ Firestore write failed: ${e.message}`, 'err');
+    log('  → Open Firebase Console → Firestore → Rules and set:', 'warn');
+    log('      allow read, write: if true;', 'warn');
+    log('  (Remember to tighten rules again after seeding)', 'warn');
+    btn.disabled = false;
+    setProgress(0, '❌ Firestore permission error — see log');
+    return;
+  }
+
+  // ── Step 2: wait for Google Maps ─────────────────────────────────────
+  log('🗺  Waiting for Google Maps API…', 'info');
+  try {
+    await waitForMaps();
+    log('  ✓ Google Maps API ready', 'ok');
+  } catch (e) {
+    log(`  ❌ ${e.message}`, 'err');
+    btn.disabled = false;
+    setProgress(0, '❌ Google Maps failed — see log');
+    return;
+  }
+
+  // ── Step 3: create PlacesService using a real map element ─────────────
+  let service;
+  try {
+    const gmap = new google.maps.Map(document.getElementById('gmap'), {
+      center: { lat: 52.2919, lng: -1.5358 }, zoom: 13
+    });
+    service = new google.maps.places.PlacesService(gmap);
+    log('  ✓ PlacesService initialised', 'ok');
+  } catch (e) {
+    log(`  ❌ PlacesService failed: ${e.message}`, 'err');
+    btn.disabled = false;
+    setProgress(0, '❌ PlacesService error — see log');
+    return;
+  }
+
+  // ── Step 4: loop through all places ──────────────────────────────────
+  log(`\n🚀 Seeding ${PLACES.length} places…\n`, 'info');
+  let saved = 0;
+
+  for (let i = 0; i < PLACES.length; i++) {
+    const place = PLACES[i];
+    const pct   = Math.round(((i + 1) / PLACES.length) * 100);
+    setProgress(pct, `[${i + 1}/${PLACES.length}] ${place.name}`);
+    log(`[${String(i).padStart(2, '0')}] ${place.name}`);
+
+    const { photoUrls, reviews, googlePlaceId } = await fetchPlaceDetails(service, place);
+
+    try {
+      await db.collection('places').doc(String(i)).set({
+        index:             i,
+        name:              place.name,
+        category:          place.category,
+        description:       place.description,
+        lat:               place.lat,
+        lng:               place.lng,
+        googleRating:      place.googleRating,
+        googleReviewCount: place.googleReviewCount,
+        communityRatings:  [],
+        googlePlaceId:     googlePlaceId || null,
+        photoUrls,
+        reviews,
+        seededAt:          firebase.firestore.FieldValue.serverTimestamp()
+      });
+      log(`  💾 Saved to Firestore`, 'ok');
+      saved++;
+    } catch (e) {
+      log(`  ❌ Firestore write failed: ${e.message}`, 'err');
+    }
+
+    // Respect Places API rate limit (~1 req/s)
+    if (i < PLACES.length - 1) await sleep(800);
+  }
+
+  setProgress(100, `✅ Done — ${saved}/${PLACES.length} places saved to Firestore`);
+  log(`\n🎉 Seeding complete! ${saved}/${PLACES.length} places saved.`, 'ok');
+  if (saved < PLACES.length) {
+    log(`⚠ ${PLACES.length - saved} place(s) failed — check entries above.`, 'warn');
+  }
+  btn.disabled = false;
+});
+
+// ── CHECK button ───────────────────────────────────────────────────────────
+document.getElementById('check-btn').addEventListener('click', async () => {
+  if (!db) { log('❌ Firebase not ready.', 'err'); return; }
+  logEl.innerHTML = '';
+  log('🔍 Reading Firestore "places" collection…', 'info');
+  try {
+    const snap = await db.collection('places').orderBy('index').get();
+    log(`Found ${snap.size} / ${PLACES.length} document(s) in Firestore\n`);
+    snap.forEach(doc => {
+      const d       = doc.data();
+      const photos  = (d.photoUrls || []).length;
+      const reviews = (d.reviews   || []).length;
+      const pid     = d.googlePlaceId ? '✓ placeId' : '✗ no placeId';
+      const cls     = photos > 0 ? 'ok' : 'warn';
+      log(`  [${String(d.index).padStart(2, '0')}] ${d.name} — ${photos} photo(s), ${reviews} review(s), ${pid}`, cls);
+    });
+    setProgress(0, 'Check complete');
+  } catch (e) {
+    log(`❌ Firestore read failed: ${e.message}`, 'err');
+  }
+});
+
+// ── CLEAR button ───────────────────────────────────────────────────────────
+document.getElementById('clear-btn').addEventListener('click', async () => {
+  if (!db) { log('❌ Firebase not ready.', 'err'); return; }
+  if (!confirm('Delete ALL documents in the "places" collection? This cannot be undone.')) return;
+  logEl.innerHTML = '';
+  log('🗑️  Deleting all place documents…', 'warn');
+  try {
+    const snap  = await db.collection('places').get();
+    const batch = db.batch();
+    snap.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    log(`✅ Deleted ${snap.size} document(s).`, 'ok');
+    setProgress(0, 'Collection cleared');
+  } catch (e) {
+    log(`❌ Delete failed: ${e.message}`, 'err');
+  }
+});
+</script>
+</body>
+</html>
 
