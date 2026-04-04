@@ -4,12 +4,11 @@
 
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1IjoiamluZ2xlYmFsc2giLCJhIjoiY21sNm1yY2U3MDJkMDNmcjBneG5hN2RzbSJ9.S5GEGRibVdFnLfdzZIusHw';
 
-// Google Places API Key - Get yours at: https://console.cloud.google.com/google/maps-apis
-// Enable "Places API" and "Maps JavaScript API"
-const GOOGLE_API_KEY = 'AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8'; // Replace with your own key for production
-
 // Leamington Spa centre: 52.2919, -1.5358
 const COVENTRY_CENTRE = { lat: 52.2919, lng: -1.5358 };
+
+// Track which place (by index) is highlighted from sidebar tab interaction
+let highlightedPlaceIndex = null;
 
 // =============================================================================
 // FIREBASE CONFIGURATION & INITIALIZATION
@@ -45,30 +44,12 @@ try {
   console.warn('⚠️ Falling back to local storage only');
 }
 
-// =============================================================================
-// PHOTO DISPLAY FUNCTIONS - OPTION A (No API Setup Required)
-// =============================================================================
-
-// Display photos using Google Images search link (no billing required)
-console.log('%c🎉 Photo System: Option A (No API Setup)', 'color: #a855f7; font-weight: bold; font-size: 14px;');
-console.log('✅ Photos accessible via "View Photos on Google" button');
-console.log('✅ No API billing required');
-console.log('✅ Click any place to view photos!');
-
-// Function to display place information with photo search link
-function displayPlacePhotos(placeName, lat, lng, callback) {
-  // Return empty array to trigger the enhanced fallback display
-  // This shows a nice UI with "View Photos on Google" button
-  console.log(`📷 ${placeName}: Click "View Photos on Google" to see photos`);
-  callback([]);
-}
-
 // -----------------------------------------------------------------------------
 // BARS & PUBS IN LEAMINGTON SPA
 // Categories: bar (modern bars/cocktails), pub (traditional pubs), quick_munch (food spots)
 // Click on map to see coordinates in browser console for adjusting locations
 // -----------------------------------------------------------------------------
-const SAMPLE_PLACES = [
+let SAMPLE_PLACES = [
   // === PUBS (12) ===
   { name: 'The Fat Pug', category: 'pub', lng: -1.5483250968291211, lat: 52.292353365642995, communityRatings: [], googleRating: 4.5, googleReviewCount: 1200, description: 'Neighbourhood pub & kitchen serving craft beers and seasonal British food in a relaxed, dog-friendly setting.' },
   { name: 'The Star & Garter', category: 'pub', lng: -1.5419863867000403, lat: 52.29171471496728, communityRatings: [], googleRating: 4.3, googleReviewCount: 1456, description: 'Charming gastropub offering fresh seasonal food, quality drinks, and a warm atmosphere.' },
@@ -76,7 +57,7 @@ const SAMPLE_PLACES = [
   { name: 'Fizzy Moon Brewhouse & Grill', category: 'pub', lng: -1.5378148579285407, lat: 52.29028365050496, communityRatings: [], googleRating: 4.6, googleReviewCount: 2100, description: 'Award-winning craft brewery & grill with over 147 gins, microbrewery, and board games. Best Bar in Warwickshire 2018-2023.' },
   { name: 'The White Horse', category: 'pub', lng: -1.5380624571070052, lat: 52.293472963201815, communityRatings: [], googleRating: 4.4, googleReviewCount: 734, description: 'Historic pub dating back to the 1830s with courtyard beer garden, cask ales, and hearty British fare.' },
   { name: 'Copper Pot', category: 'pub', lng: -1.537273160042559, lat: 52.29198660532184, communityRatings: [], googleRating: 4.1, googleReviewCount: 677, description: 'Quaint local pub serving traditional pub food with global influences, and an extensive gin & whiskey collection.' },
-  { name: 'The Benjamin Satchwell', category: 'pub', lng: -1.5355806474284965, lat: 52.2897581971137, communityRatings: [], googleRating: 4.1, googleReviewCount: 2345, description: 'JD Wetherspoon pub offering great value food and drink with up to 6 rotating guest ales.' },
+  { name: 'The Benjamin Satchwell - JD Wetherspoon', category: 'pub', lng: -1.5355806474284965, lat: 52.2897581971137, communityRatings: [], googleRating: 4.1, googleReviewCount: 2345, description: 'JD Wetherspoon pub offering great value food and drink with up to 6 rotating guest ales.' },
   { name: 'The Cricketers', category: 'pub', lng: -1.5413251786332782, lat: 52.28746759003736, communityRatings: [], googleRating: 4.2, googleReviewCount: 560, description: 'Traditional sports pub showing live matches with a friendly atmosphere and classic pub menu.' },
   { name: 'The Royal Pug', category: 'pub', lng: -1.5325717850002718, lat: 52.29064916684562, communityRatings: [], googleRating: 4.3, googleReviewCount: 820, description: 'Sister venue to The Fat Pug, offering craft beers, artisan pizzas, and a welcoming community vibe.' },
   { name: 'The Somerville Arms', category: 'pub', lng: -1.5256116072833938, lat: 52.29356825508984, communityRatings: [], googleRating: 4.0, googleReviewCount: 450, description: 'Cosy neighbourhood pub with real ales, live music nights, and home-cooked traditional food.' },
@@ -117,6 +98,37 @@ const SAMPLE_PLACES = [
 ];
 
 // -----------------------------------------------------------------------------
+// FIRESTORE PLACE ENRICHMENT
+// Merges stored photos, reviews, and Google Place ID from Firestore into the
+// local SAMPLE_PLACES array. Run seed.html once to populate the collection.
+// -----------------------------------------------------------------------------
+async function loadAndEnrichPlaces() {
+  if (!db) {
+    console.warn('⚠️ Firebase not available — using base place data only');
+    return;
+  }
+  try {
+    const snapshot = await db.collection('places').orderBy('index').get();
+    if (snapshot.empty) {
+      console.log('📝 Firestore "places" collection is empty — open seed.html to populate it');
+      return;
+    }
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const idx  = data.index;
+      if (typeof idx === 'number' && SAMPLE_PLACES[idx]) {
+        SAMPLE_PLACES[idx].googlePlaceId = data.googlePlaceId || null;
+        SAMPLE_PLACES[idx].photoUrls     = data.photoUrls     || [];
+        SAMPLE_PLACES[idx].reviews       = data.reviews       || [];
+      }
+    });
+    console.log(`✅ Enriched ${snapshot.size} places from Firestore (photos + reviews)`);
+  } catch (err) {
+    console.error('❌ Error loading places from Firestore:', err);
+  }
+}
+
+// -----------------------------------------------------------------------------
 // LOGIC HELPERS
 // -----------------------------------------------------------------------------
 function getWeightedAverageRating(place) {
@@ -143,46 +155,32 @@ function getEffectiveVoteCount(place) {
 }
 
 function placesToGeoJSON(places) {
-  // First pass: calculate all color ratings
-  const colorRatings = places.map((place) => {
+  // First pass: calculate raw weighted ratings for every place
+  const rawRatings = places.map((place) => {
     const community = place.communityRatings || [];
     const communityVoteCount = community.length;
-    const hasCommunityVotes = communityVoteCount > 0;
-    
-    let colorRating;
-    if (hasCommunityVotes) {
-      const communityAvg = community.reduce((acc, r) => acc + r, 0) / community.length;
-      const googleRating = place.googleRating;
-      const normalizedGoogle = (googleRating - 3.0) * 2.0 + 1.0;
+
+    if (communityVoteCount > 0) {
+      const communityAvg = community.reduce((acc, r) => acc + r, 0) / communityVoteCount;
+      const normalizedGoogle = (place.googleRating - 3.0) * 2.0 + 1.0;
       const googleWeight = Math.max(1, 5 - communityVoteCount * 0.4);
-      const communityWeight = communityVoteCount;
-      const totalWeight = googleWeight + communityWeight;
-      colorRating = (normalizedGoogle * googleWeight + communityAvg * communityWeight) / totalWeight;
-    } else {
-      const googleRating = place.googleRating;
-      colorRating = (googleRating - 3.0) * 2.0 + 1.0;
+      const totalWeight = googleWeight + communityVoteCount;
+      return (normalizedGoogle * googleWeight + communityAvg * communityVoteCount) / totalWeight;
     }
-    return colorRating;
+    return (place.googleRating - 3.0) * 2.0 + 1.0;
   });
-  
-  // Calculate variance to determine if we need to stretch the scale
-  const minRating = Math.min(...colorRatings);
-  const maxRating = Math.max(...colorRatings);
-  const range = maxRating - minRating;
-  
-  // If variance is low (range < 1.5), stretch the values for better visual distinction
-  const needsStretching = range < 1.5 && range > 0;
-  
+
+  // Normalize to full 1–5 scale using actual min/max across all places
+  const minRating = Math.min(...rawRatings);
+  const maxRating = Math.max(...rawRatings);
+  const range     = maxRating - minRating;
+
   return {
     type: 'FeatureCollection',
     features: places.map((place, index) => {
-      let colorRating = colorRatings[index];
-      
-      // Apply stretching if needed to increase visual variance
-      if (needsStretching) {
-        // Map the tight range to a wider 1-5 range
-        colorRating = 1 + ((colorRating - minRating) / range) * 4;
-      }
+      const colorRating = range > 0
+        ? 1 + ((rawRatings[index] - minRating) / range) * 4
+        : 3;
       
       // Check if this place is marked
       const markedPlaces = JSON.parse(localStorage.getItem('markedPlaces') || '[]');
@@ -201,7 +199,8 @@ function placesToGeoJSON(places) {
           description: place.description || '',
           lat: place.lat,
           lng: place.lng,
-          isMarked: isMarked
+          isMarked: isMarked,
+          highlighted: index === highlightedPlaceIndex
         }
       };
     })
@@ -254,8 +253,30 @@ map.on('style.load', () => {
 // Declare geolocateControl in outer scope so button handlers can access it
 let geolocateControl;
 
-map.on('load', () => {
+// Module-level so proximity system and popup can both reach them
+function getUserRating(placeIndex) {
+  const userRatings = JSON.parse(localStorage.getItem('userRatings') || '{}');
+  return userRatings[placeIndex] !== undefined ? userRatings[placeIndex] : null;
+}
+
+function saveUserRating(placeIndex, rating) {
+  const userRatings = JSON.parse(localStorage.getItem('userRatings') || '{}');
+  userRatings[placeIndex] = rating;
+  localStorage.setItem('userRatings', JSON.stringify(userRatings));
+}
+
+// Refresh the Mapbox source after a rating change
+function refreshMapSource() {
+  if (map && map.getSource('places')) {
+    map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
+  }
+}
+
+map.on('load', async () => {
   console.log('10. ✅ Map loaded successfully!');
+
+  // Enrich SAMPLE_PLACES with photos & reviews stored in Firestore
+  await loadAndEnrichPlaces();
   
   // ============================================================================
   // FIREBASE RATING FUNCTIONS - Define before use
@@ -376,17 +397,6 @@ map.on('load', () => {
   // ============================================================================
   // LOCAL STORAGE RATING FUNCTIONS (for user's own ratings)
   // ============================================================================
-  
-  function getUserRating(placeIndex) {
-    const userRatings = JSON.parse(localStorage.getItem('userRatings') || '{}');
-    return userRatings[placeIndex] || null;
-  }
-
-  function saveUserRating(placeIndex, rating) {
-    const userRatings = JSON.parse(localStorage.getItem('userRatings') || '{}');
-    userRatings[placeIndex] = rating;
-    localStorage.setItem('userRatings', JSON.stringify(userRatings));
-  }
 
   function removeUserRating(placeIndex) {
     const userRatings = JSON.parse(localStorage.getItem('userRatings') || '{}');
@@ -565,20 +575,28 @@ map.on('load', () => {
         ],
         'circle-color': [
           'interpolate', ['linear'], ['get', 'colorRating'],
-          1.0, '#ffeb3b',  // Yellow (lowest)
-          2.0, '#ffc107',  // Amber
-          3.0, '#ff9800',  // Orange
-          4.0, '#f44336',  // Red
-          5.0, '#b71c1c'   // Dark red (highest)
+          1.0, '#e53935',  // Red (lowest)
+          2.0, '#fb8c00',  // Orange
+          3.0, '#fdd835',  // Yellow
+          4.0, '#7cb342',  // Light green
+          5.0, '#2e7d32'   // Dark green (highest)
         ],
         'circle-stroke-width': [
           'case',
-          ['get', 'isMarked'],
-          5,  // Thicker outline for marked places
-          2   // Normal outline for unmarked places
+          ['boolean', ['get', 'highlighted'], false], 6,
+          ['boolean', ['get', 'isMarked'], false], 5,
+          2
         ],
-        'circle-stroke-color': '#fff',
-        'circle-opacity': 0.6
+        'circle-stroke-color': [
+          'case',
+          ['boolean', ['get', 'highlighted'], false], '#ffffff',
+          '#fff'
+        ],
+        'circle-opacity': [
+          'case',
+          ['boolean', ['get', 'highlighted'], false], 1.0,
+          0.65
+        ]
       }
     });
     
@@ -597,6 +615,9 @@ map.on('load', () => {
   // Function to set up all event handlers for map interactions
   function setupEventHandlers() {
   console.log('17. Setting up event handlers...');
+
+  // Track which categories are currently shown via search (null = nothing shown yet)
+  let currentSearchCategories = null;
   
   // Add geolocation control to show user's current location with live tracking
   // Note: fitBoundsOptions is set to disable automatic centering
@@ -617,14 +638,7 @@ map.on('load', () => {
   
   map.addControl(geolocateControl, 'top-right');
   
-  // Add a label to the left of the geolocation button
-  const locationLabel = document.createElement('div');
-  locationLabel.className = 'location-button-label';
-  locationLabel.innerHTML = '📍 See your Live Location ->';
-  document.body.appendChild(locationLabel);
-  
   console.log('📍 Geolocation control added to map - ready to be triggered');
-  console.log('✨ Location label added next to button');
   
   // Custom user location marker (backup if Mapbox default doesn't show)
   let userLocationMarker = null;
@@ -645,6 +659,10 @@ map.on('load', () => {
   
   // Event listeners to track location status
   geolocateControl.on('geolocate', (position) => {
+    // Persist the fact that location was granted — covers the case where the
+    // user clicks the Mapbox button directly without going through our popup
+    localStorage.setItem('locationChoice', 'allowed');
+
     // Enable map movement prevention
     preventMapMove = true;
     
@@ -718,36 +736,21 @@ map.on('load', () => {
   
   console.log('✅ Geolocation control added with live tracking enabled');
 
-  // Auto-trigger location if user previously allowed it
-  // Increased delay to ensure everything is fully loaded
-  setTimeout(() => {
-    const locationChoice = localStorage.getItem('locationChoice');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🔍 AUTO-TRIGGER CHECK');
-    console.log('   Location choice from localStorage:', locationChoice);
-    console.log('   Geolocate control exists:', !!geolocateControl);
-    console.log('   Map is loaded:', map.loaded());
-    
-    if (locationChoice === 'allowed') {
-      console.log('✅ CONDITIONS MET - AUTO-TRIGGERING LOCATION NOW!');
-      console.log('📍 Calling geolocateControl.trigger()...');
-      
+  // autoTriggerLocation is called by the window-load handler below once it
+  // confirms the user has (or previously had) location permission.
+  // It polls until geolocateControl is ready rather than using a fixed delay.
+  window._autoTriggerLocation = function autoTriggerLocation() {
+    if (geolocateControl && map.loaded()) {
       try {
-        // Trigger the geolocation control to show live location
         geolocateControl.trigger();
-        console.log('✅ ✅ ✅ SUCCESS! Trigger called successfully!');
-        console.log('💡 The blue pulsing location dot should appear on the map');
-        console.log('💡 Check your browser permissions if nothing appears');
-      } catch (error) {
-        console.error('❌ ERROR triggering geolocation:', error);
-        console.error('   Error details:', error.message, error.stack);
+        console.log('📍 Location auto-triggered successfully');
+      } catch (err) {
+        console.error('❌ Auto-trigger failed:', err);
       }
     } else {
-      console.log('ℹ️ Location not previously allowed');
-      console.log('💡 User needs to click "Enable Location" or the location button');
+      setTimeout(window._autoTriggerLocation, 250);
     }
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  }, 1500);
+  };
 
   // Wait for the layer to be fully ready before attaching event handlers
   // This ensures the circles are fully interactive
@@ -779,104 +782,203 @@ map.on('load', () => {
     map.getCanvas().style.cursor = '';
   });
 
-  // Rating popup on click
-  const votePopup = new mapboxgl.Popup({ 
-    closeButton: true, 
-    className: 'vote-popup', 
-    maxWidth: '90vw',  // Max 90% of viewport width for small screens
-    anchor: 'bottom',  // Anchor popup to bottom, so it appears on top of the circle
-    offset: 25         // Offset from the circle center
-  });
-  
-  map.on('click', 'place-bubbles', (e) => {
-    console.log('🖱️ Circle clicked!', e.features[0].properties.name);
-    const feat = e.features[0];
-    const placeIndex = feat.id;
-    const props = feat.properties;
-    popup.remove();
-    
-    // Center the map on the clicked circle with smooth animation
-    const coordinates = feat.geometry.coordinates.slice(); // Copy coordinates
-    console.log('📍 Centering map on:', coordinates);
-    
-    // Get viewport size for responsive centering
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
-    
-    // Calculate offset to position popup optimally
-    // Popup appears above the circle, so we offset downward to bring circle up
-    const verticalOffset = viewportHeight > 600 ? 150 : 100; // More offset on larger screens
-    
-    // Smoothly pan map to center on the clicked location
-    map.easeTo({
-      center: coordinates,
-      duration: 600, // 600ms smooth animation
-      offset: [0, verticalOffset] // Offset downward so circle moves up and popup has space above
-    });
-    
-    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(props.name + ' Leamington Spa')}`;
-    const googleImagesUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(props.name + ' Leamington Spa')}`;
-    
-    // Check if user has previously rated this place
-    const previousRating = getUserRating(placeIndex);
-    const defaultValue = previousRating !== null ? previousRating : 3;
-    const hintText = previousRating !== null ? 'Drag to update your rating' : 'Drag to rate';
-    
-    // Check if place is marked
-    const isMarked = isPlaceMarked(placeIndex);
-    const markButtonText = isMarked ? '⭐ Marked' : '☆ Mark Place';
+  // ── Per-place popup registry ──────────────────────────────────────────────
+  // Key: placeIndex (number)  Value: mapboxgl.Popup instance
+  const activePopups = new Map();
+
+  // Returns the same colorRating value Mapbox uses for a place's bubble
+  function getPlaceColorRating(placeIndex) {
+    const feat = placesToGeoJSON(SAMPLE_PLACES).features[placeIndex];
+    return feat ? feat.properties.colorRating : 3;
+  }
+
+  // Mirrors the Mapbox circle-color interpolation exactly
+  function ratingToColor(rating) {
+    const stops = [
+      [1.0, [229,  57,  53]],  // #e53935  Red
+      [2.0, [251, 140,   0]],  // #fb8c00  Orange
+      [3.0, [253, 216,  53]],  // #fdd835  Yellow
+      [4.0, [124, 179,  66]],  // #7cb342  Light green
+      [5.0, [ 46, 125,  50]],  // #2e7d32  Dark green
+    ];
+    const v = Math.max(1, Math.min(5, rating || 3));
+    for (let i = 0; i < stops.length - 1; i++) {
+      const [r1, c1] = stops[i];
+      const [r2, c2] = stops[i + 1];
+      if (v <= r2) {
+        const t = (v - r1) / (r2 - r1);
+        return [0, 1, 2].map(ch => Math.round(c1[ch] + t * (c2[ch] - c1[ch])));
+      }
+    }
+    return [183, 28, 28];
+  }
+
+  // Helper: show/hide the bookmarks sidebar based on its content.
+  // Info sidebar is always visible (legend is a permanent header).
+  function refreshSidebarVisibility() {
+    const hasBookmarks = locationsList && locationsList.children.length > 0;
+    if (locationsSidebar) locationsSidebar.classList.toggle('has-tabs', hasBookmarks);
+  }
+
+  // ── Open a floating popup beside the clicked bubble ─────────────────────
+  function showVotePopup(placeIndex) {
+    const place = SAMPLE_PLACES[placeIndex];
+
+    // Same bubble clicked again → close it (toggle)
+    if (activePopups.has(placeIndex)) {
+      removeVotePopup(placeIndex);
+      return;
+    }
+
+    // Close any other open panel — only one at a time
+    [...activePopups.keys()].forEach(idx => removeVotePopup(idx));
+
+    const googleMapsUrl   = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' Leamington Spa')}`;
+    const googleImagesUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(place.name + ' Leamington Spa')}`;
+    const isMarked        = isPlaceMarked(placeIndex);
+    const markButtonText  = isMarked ? '⭐ Marked' : '☆ Mark Place';
     const markButtonClass = isMarked ? 'mark-button marked' : 'mark-button';
-    
-    // Format category name nicely
-    const categoryLabel = props.category.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-    
-    // Show popup with loading state (after a tiny delay to let centering start)
-    setTimeout(() => {
-      votePopup.setLngLat(coordinates).setHTML(`
-      <div class="vote-panel">
-        <h3>${props.name} <span class="place-category">(${categoryLabel})</span></h3>
-        
-        <!-- Photo Gallery -->
-        <div class="place-photos" id="photo-gallery-${placeIndex}">
-          <div class="photo-loading">
-            <p>📸 Loading photos...</p>
+    const avgRating       = Math.round(getWeightedAverageRating(place) * 100) / 100;
+    const categoryLabel   = place.category.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+    const userRating      = getUserRating(placeIndex);
+
+    // Bubble colour — matches the circle on the map
+    const [r, g, b]  = ratingToColor(getPlaceColorRating(placeIndex));
+    const bubbleColor = `rgb(${r},${g},${b})`;
+
+    // ── Photo hero ────────────────────────────────────────────────────────
+    const storedPhotos = place.photoUrls && place.photoUrls.length > 0;
+    const photoHero = storedPhotos
+      ? `<div class="detail-photo-hero" id="photo-gallery-${placeIndex}">
+           ${place.photoUrls.map((url, i) =>
+             `<img class="place-photo ${i === 0 ? 'active' : ''}" src="${url}" alt="${place.name}"
+                   onerror="this.style.display='none'" />`
+           ).join('')}
+           ${place.photoUrls.length > 1 ? `
+             <button class="photo-prev" onclick="changePhoto(${placeIndex}, -1)">&#8249;</button>
+             <button class="photo-next" onclick="changePhoto(${placeIndex}, 1)">&#8250;</button>
+             <div class="photo-counter">
+               <span id="current-photo-${placeIndex}">1</span> / ${place.photoUrls.length}
+             </div>` : ''}
+         </div>`
+      : `<div class="detail-photo-hero detail-photo-fallback">
+           <div class="fallback-icon">📸</div>
+           <a href="${googleImagesUrl}" target="_blank" class="view-photos-button">🔍 View on Google</a>
+         </div>`;
+
+    // ── Reviews ───────────────────────────────────────────────────────────
+    const storedReviews = place.reviews && place.reviews.length > 0;
+    const reviewsSection = storedReviews
+      ? `<div class="place-reviews">
+           <h4 class="reviews-title">Most Recent Reviews</h4>
+           ${place.reviews.map(r => {
+             const stars = Math.max(0, Math.min(5, Math.round(r.rating)));
+             return `
+               <div class="review-item">
+                 <div class="review-header">
+                   <span class="review-author">${r.author}</span>
+                   <span class="review-stars">${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}</span>
+                   <span class="review-time">${r.time}</span>
+                 </div>
+                 <p class="review-text">${r.text}</p>
+               </div>`;
+           }).join('')}
+         </div>`
+      : '';
+
+    // ── Panel HTML ────────────────────────────────────────────────────────
+    const html = `
+      ${photoHero}
+      <div class="vote-panel" data-panel-idx="${placeIndex}">
+        <button class="detail-close-btn" id="detail-close-btn" aria-label="Close">✕</button>
+
+        <div class="detail-name-row">
+          <div class="detail-bubble-wrap">
+            <div class="detail-bubble-ring" style="border-color:${bubbleColor}"></div>
+            <div class="detail-bubble-circle" style="background:${bubbleColor}">
+              <span class="detail-bubble-score">${avgRating}</span>
+            </div>
+          </div>
+          <div class="detail-name-text">
+            <h3>${place.name}</h3>
+            <span class="place-category">${categoryLabel}</span>
           </div>
         </div>
-        
-        <p class="place-description">${props.description}</p>
-        
+
+        <p class="place-description">${place.description || ''}</p>
+
         <div class="place-links">
           <a href="${googleMapsUrl}" target="_blank" class="google-maps-link">📍 Open in Google Maps</a>
           <button class="${markButtonClass}" data-place-idx="${placeIndex}">${markButtonText}</button>
         </div>
-        
-        <label class="rating-label">
-          <span>How good was it?</span>
-          <span class="place-rating">⭐ ${props.averageRating}</span>
-        </label>
-        <input type="range" min="1" max="5" step="0.01" value="${defaultValue}" class="vote-slider" data-idx="${placeIndex}">
-        <p class="slider-hint">${hintText}</p>
-        ${previousRating !== null ? '<p class="previous-rating">Your rating: ⭐ ' + previousRating.toFixed(1) + '</p>' : ''}
+
+        <div class="rating-label">
+          <span>Community rating</span>
+          <span class="place-rating">⭐ ${avgRating}</span>
+        </div>
+        ${userRating !== null
+          ? `<p class="previous-rating">Your rating: ⭐ ${userRating.toFixed(1)}</p>`
+          : ''}
+
+        ${reviewsSection}
       </div>
-    `).addTo(map);
-      
-      // Display photos with Google Images link (Option A - no API required)
-      displayPlacePhotos(props.name, props.lat, props.lng, (photoUrls) => {
-        const gallery = document.getElementById(`photo-gallery-${placeIndex}`);
-        if (!gallery) return;
-        
-        // Show clean interface with photo search button
-        gallery.innerHTML = `
-          <div class="photo-fallback">
-            <div class="fallback-icon">📸</div>
-            <a href="${googleImagesUrl}" target="_blank" class="view-photos-button">
-              🔍 View Photos on Google
-            </a>
-          </div>
-        `;
-      });
-    }, 100); // Small delay to let map centering animation start
+    `;
+
+    // ── Inject & show panel ───────────────────────────────────────────────
+    const panel   = document.getElementById('place-detail-panel');
+    const overlay = document.getElementById('detail-overlay');
+    panel.innerHTML = html;
+    panel.setAttribute('aria-hidden', 'false');
+    panel.classList.add('panel-open');
+    if (overlay) overlay.classList.add('overlay-visible');
+
+    document.getElementById('detail-close-btn')
+      .addEventListener('click', () => removeVotePopup(placeIndex));
+
+    activePopups.set(placeIndex, true);
+
+    // Pan map — offset so the bubble isn't hidden behind the panel
+    map.easeTo({ center: [place.lng, place.lat], duration: 500 });
+  }
+
+  // ── Remove / hide the detail panel ───────────────────────────────────────
+  function removeVotePopup(placeIndex) {
+    if (!activePopups.has(placeIndex)) return;
+    const panel   = document.getElementById('place-detail-panel');
+    const overlay = document.getElementById('detail-overlay');
+    if (panel) {
+      panel.classList.remove('panel-open');
+      panel.setAttribute('aria-hidden', 'true');
+    }
+    if (overlay) overlay.classList.remove('overlay-visible');
+    activePopups.delete(placeIndex);
+  }
+
+  // ── Click a bubble: show floating popup ──────────────────────────────────
+  map.on('click', 'place-bubbles', (e) => {
+    console.log('🖱️ Circle clicked!', e.features[0].properties.name);
+    const feat       = e.features[0];
+    const placeIndex = feat.id;
+    popup.remove(); // remove hover tooltip
+
+    showVotePopup(placeIndex);
   });
+
+  // ── Click on map background: close the detail panel ─────────────────────
+  map.on('click', (e) => {
+    const hit = map.queryRenderedFeatures(e.point, { layers: ['place-bubbles'] });
+    if (hit.length === 0) {
+      [...activePopups.keys()].forEach(idx => removeVotePopup(idx));
+    }
+  });
+
+  // ── Dim overlay tap (mobile) closes the panel ────────────────────────────
+  const _detailOverlay = document.getElementById('detail-overlay');
+  if (_detailOverlay) {
+    _detailOverlay.addEventListener('click', () => {
+      [...activePopups.keys()].forEach(idx => removeVotePopup(idx));
+    });
+  }
 
   // Photo carousel navigation
   window.changePhoto = function(placeIndex, direction) {
@@ -955,27 +1057,29 @@ map.on('load', () => {
         e.target.textContent = '⭐ Marked';
         console.log(`✅ Place ${placeIdx} marked`);
         
-        // Trigger multiple animation layers for marked place
+        // Trigger pulse animation
         animateMarkCircle(placeIdx);
         
-        // Add temporary animated property to trigger circle animation
+        // Briefly set justMarked for circle animation
         SAMPLE_PLACES[placeIdx].justMarked = true;
-        
-        // Update map immediately with animation property
         map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
-        
-        // Remove animation property after animation completes
         setTimeout(() => {
           delete SAMPLE_PLACES[placeIdx].justMarked;
           map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
         }, 800);
+
+        // ── Add a sidebar tab for this newly bookmarked place ──
+        addLocationTab(placeIdx);
+
       } else {
         e.target.classList.remove('marked');
         e.target.textContent = '☆ Mark Place';
         console.log(`❌ Place ${placeIdx} unmarked`);
         
-        // Update map to show normal stroke
         map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
+
+        // ── Remove the sidebar tab for this unbookmarked place ──
+        removeLocationTab(placeIdx);
       }
       
       console.log('🔄 Map updated with new mark status');
@@ -1044,158 +1148,323 @@ map.on('load', () => {
       // Add animation class to popup
       votePanel.classList.add('rating-submitted');
       
-      // Close popup after 2 seconds
-      setTimeout(() => {
-        votePopup.remove();
-      }, 2000);
+      // Close this place's popup after 2 seconds
+      setTimeout(() => removeVotePopup(idx), 2000);
     }
   });
 
   // ---------------------------------------------------------------------------
-  // FILTER LOGIC
+  // FILTER LOGIC (driven by search only — no checkboxes)
   // ---------------------------------------------------------------------------
-  const checkboxes = document.querySelectorAll('.category-filter');
-  const showMarkedOnlyCheckbox = document.getElementById('show-marked-only');
-  
   function updateFilters() {
-    const activeCategories = Array.from(checkboxes)
-      .filter(cb => cb.checked)
-      .map(cb => cb.value);
-    
-    const showMarkedOnly = showMarkedOnlyCheckbox ? showMarkedOnlyCheckbox.checked : false;
-    
-    console.log('🔍 Active categories:', activeCategories);
-    console.log('⭐ Show marked only:', showMarkedOnly);
-    
-    // Build the filter based on category and marked status
-    let filter;
-    
-    if (activeCategories.length === 0) {
-      // If no categories selected, hide all circles
-      filter = ['==', 'category', ''];
-    } else {
-      // Base filter: show circles matching selected categories
-      const categoryFilter = ['in', ['get', 'category'], ['literal', activeCategories]];
-      
-      if (showMarkedOnly) {
-        // Additional filter: only show marked places
-        filter = ['all', categoryFilter, ['==', ['get', 'isMarked'], true]];
-      } else {
-        // Just category filter
-        filter = categoryFilter;
-      }
+    if (currentSearchCategories === null) {
+      // Nothing searched yet — show all bubbles
+      map.setFilter('place-bubbles', null);
+      return;
     }
-    
-    map.setFilter('place-bubbles', filter);
+
+    const isMarked = ['boolean', ['get', 'isMarked'], false];
+
+    if (currentSearchCategories.length === 0) {
+      // No category match — still show any marked places
+      map.setFilter('place-bubbles', isMarked);
+      return;
+    }
+
+    // Show bubbles that match the searched category OR are marked
+    map.setFilter('place-bubbles', [
+      'any',
+      ['in', ['get', 'category'], ['literal', currentSearchCategories]],
+      isMarked
+    ]);
   }
 
-  checkboxes.forEach(cb => cb.addEventListener('change', updateFilters));
-  
-  // Add event listener for "Only Marked" checkbox
-  if (showMarkedOnlyCheckbox) {
-    showMarkedOnlyCheckbox.addEventListener('change', updateFilters);
-  }
-  
-  // Apply filters after a small delay to ensure layer is ready
+  // Apply initial filter after a small delay to ensure layer is ready
   setTimeout(() => {
     updateFilters();
     console.log('✅ Event handlers and filters ready!');
-    console.log('✅ Try clicking on a circle now!');
   }, 100);
+
+  // ── SEARCH BAR ────────────────────────────────────────────────────────────
+  const searchBtn   = document.getElementById('search-btn');
+  const searchInput = document.getElementById('search-input');
+
+  function performSearch() {
+    const term    = (searchInput ? searchInput.value : '').toLowerCase().trim();
+    const hintEl  = document.getElementById('search-hint');
+
+    if (!term) {
+      // Empty search — reset to show all bubbles
+      currentSearchCategories = null;
+      updateFilters();
+      if (hintEl) {
+        hintEl.textContent = 'Search a category to discover places near you';
+        hintEl.classList.remove('no-results');
+      }
+      return;
+    }
+
+    // Category matching table — flexible keyword → category mapping
+    const categoryMap = [
+      { value: 'bar',         keywords: ['bar', 'bars', 'cocktail', 'cocktails', 'drinks', 'spirits'] },
+      { value: 'pub',         keywords: ['pub', 'pubs', 'ale', 'ales', 'bitter', 'lager', 'tavern', 'inn'] },
+      { value: 'quick_munch', keywords: ['quick', 'munch', 'food', 'eat', 'eats', 'fast', 'snack', 'kebab',
+                                         'burger', 'pizza', 'chicken', 'quick munch', 'quick_munch', 'takeaway'] }
+    ];
+
+    const matchedCategories = categoryMap
+      .filter(c => c.keywords.some(kw => kw.includes(term) || term.includes(kw)))
+      .map(c => c.value);
+
+    if (matchedCategories.length === 0) {
+      if (hintEl) {
+        hintEl.textContent = 'No match — try: bar, pub, or quick munch';
+        hintEl.classList.add('no-results');
+      }
+      return;
+    }
+
+    if (hintEl) hintEl.classList.remove('no-results');
+
+    currentSearchCategories = matchedCategories;
+    updateFilters();
+
+    // Fit map bounds to all matching places
+    const matchingPlaces = SAMPLE_PLACES.filter(p => matchedCategories.includes(p.category));
+    if (matchingPlaces.length > 0) {
+      const bounds = new mapboxgl.LngLatBounds();
+      matchingPlaces.forEach(p => bounds.extend([p.lng, p.lat]));
+      map.fitBounds(bounds, {
+        padding: { top: 80, bottom: 130, left: 230, right: 320 },
+        maxZoom: 15,
+        duration: 900
+      });
+    }
+
+    if (hintEl) {
+      const catLabel = matchedCategories.map(c => c.replace('_', ' ')).join(' & ');
+      hintEl.textContent = `${matchingPlaces.length} ${catLabel} place${matchingPlaces.length !== 1 ? 's' : ''} found — click a bubble to explore`;
+    }
+
+    console.log(`🔍 Search: "${term}" → ${matchedCategories.join(', ')} (${matchingPlaces.length} places)`);
+  }
+
+  if (searchBtn)  searchBtn.addEventListener('click', performSearch);
+  if (searchInput) searchInput.addEventListener('keypress', e => { if (e.key === 'Enter') performSearch(); });
+
+  // ── SIDEBARS ───────────────────────────────────────────────────────────────
+  const infoSidebar      = document.getElementById('info-sidebar');       // LEFT  — clicked bubble panels
+  const locationsSidebar = document.getElementById('locations-sidebar');  // RIGHT — bookmarked places
+  const locationsList    = document.getElementById('locations-list');
+
+  const CATEGORY_ICONS = { bar: '🍺', pub: '🍻', quick_munch: '🍔' };
+
+  function addLocationTab(placeIndex) {
+    if (!locationsList) return;
+    const place = SAMPLE_PLACES[placeIndex];
+
+    // Move existing tab for this place to the top instead of duplicating
+    const existing = locationsList.querySelector(`[data-place-idx="${placeIndex}"]`);
+    if (existing) {
+      locationsList.insertBefore(existing, locationsList.firstChild);
+      return;
+    }
+
+    const icon          = CATEGORY_ICONS[place.category] || '📍';
+    const categoryLabel = place.category.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+    const avgRating     = Math.round(getWeightedAverageRating(place) * 10) / 10;
+    const mapsUrl       = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' Leamington Spa')}`;
+
+    const tab = document.createElement('div');
+    tab.className        = 'location-tab';
+    tab.dataset.placeIdx = placeIndex;
+    tab.innerHTML = `
+      <button class="tab-close-btn" title="Remove">×</button>
+      <div class="tab-header">
+        <span class="tab-icon">${icon}</span>
+        <div class="tab-title-group">
+          <span class="tab-name">${place.name}</span>
+          <span class="tab-category-label">${categoryLabel}</span>
+        </div>
+      </div>
+      <p class="tab-description">${place.description || ''}</p>
+      <div class="tab-footer">
+        <span class="tab-rating">⭐ ${avgRating}</span>
+        <a href="${mapsUrl}" target="_blank" class="tab-maps-link">📍 Maps</a>
+      </div>
+      <p class="tab-hold-hint">Hold to zoom in &amp; view</p>
+    `;
+
+    locationsList.insertBefore(tab, locationsList.firstChild);
+    refreshSidebarVisibility();
+
+    // Color-code the tab to match its bubble (uses exact same colorRating as Mapbox)
+    const [r, g, b] = ratingToColor(getPlaceColorRating(placeIndex));
+    tab.style.borderLeftColor  = `rgb(${r}, ${g}, ${b})`;
+    tab.style.borderLeftWidth  = '4px';
+    tab.style.boxShadow        = `-3px 2px 16px rgba(0,0,0,0.55), 0 0 14px rgba(${r},${g},${b},0.55)`;
+
+    setupTabInteractions(tab, placeIndex);
+  }
+
+  function removeLocationTab(placeIndex) {
+    const tab = locationsList ? locationsList.querySelector(`[data-place-idx="${placeIndex}"]`) : null;
+    if (!tab) return;
+
+    tab.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+    tab.style.opacity    = '0';
+    tab.style.transform  = 'translateX(30px)';
+
+    setTimeout(() => {
+      tab.remove();
+      refreshSidebarVisibility();
+    }, 200);
+
+    // ── Unmark the place in localStorage if it is still marked ───────────
+    if (isPlaceMarked(placeIndex)) {
+      togglePlaceMark(placeIndex); // sets it to unmarked
+
+      // Reflect change on the mark button inside the open detail panel
+      const panelBtn = document.querySelector(
+        `.place-detail-panel .mark-button[data-place-idx="${placeIndex}"]`
+      );
+      if (panelBtn) {
+        panelBtn.classList.remove('marked');
+        panelBtn.textContent = '☆ Mark Place';
+      }
+
+      // Refresh map bubbles so any mark-specific styling is removed
+      if (map.getSource('places')) {
+        map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
+      }
+    }
+
+    // Clear highlight if this was the highlighted place
+    if (highlightedPlaceIndex === placeIndex) {
+      highlightedPlaceIndex = null;
+      if (map.getSource('places')) map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
+    }
+  }
+
+  function setHighlight(placeIndex) {
+    // Toggle: clicking already-highlighted tab un-highlights it
+    highlightedPlaceIndex = (highlightedPlaceIndex === placeIndex) ? null : placeIndex;
+    if (map.getSource('places')) map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
+
+    // Update visual highlight on all tabs
+    if (locationsList) {
+      locationsList.querySelectorAll('.location-tab').forEach(t => {
+        const idx = parseInt(t.dataset.placeIdx);
+        t.classList.toggle('tab-highlighted', idx === highlightedPlaceIndex);
+      });
+    }
+  }
+
+  function zoomToPlace(placeIndex) {
+    const place = SAMPLE_PLACES[placeIndex];
+    const coords = [place.lng, place.lat];
+
+    // Highlight the circle
+    highlightedPlaceIndex = placeIndex;
+    if (map.getSource('places')) map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
+
+    // Highlight the tab
+    if (locationsList) {
+      locationsList.querySelectorAll('.location-tab').forEach(t => {
+        t.classList.toggle('tab-highlighted', parseInt(t.dataset.placeIdx) === placeIndex);
+      });
+    }
+
+    // Fly to the bubble
+    map.flyTo({
+      center: coords,
+      zoom: Math.max(map.getZoom(), 15.5),
+      duration: 800
+    });
+
+    // Show the popup once the fly animation has landed
+    if (!activePopups.has(placeIndex)) {
+      setTimeout(() => showVotePopup(placeIndex), 850);
+    }
+  }
+
+  function setupTabInteractions(tab, placeIndex) {
+    let holdTimer  = null;
+    let didHold    = false;
+
+    // ── Close button ──
+    const closeBtn = tab.querySelector('.tab-close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        removeLocationTab(placeIndex);
+      });
+    }
+
+    // ── Prevent Maps link from triggering tab click/hold ──
+    const mapsLink = tab.querySelector('.tab-maps-link');
+    if (mapsLink) mapsLink.addEventListener('click', e => e.stopPropagation());
+
+    // ── Click: fly to bubble and show its popup ──
+    tab.addEventListener('click', () => {
+      if (didHold) { didHold = false; return; }
+      zoomToPlace(placeIndex);
+    });
+
+    // ── Hold helpers ──
+    function startHold(e) {
+      if (e.target.closest('.tab-close-btn') || e.target.closest('.tab-maps-link')) return;
+      didHold   = false;
+      holdTimer = setTimeout(() => {
+        didHold = true;
+        tab.classList.add('tab-hold-active');
+        zoomToPlace(placeIndex);
+        setTimeout(() => tab.classList.remove('tab-hold-active'), 700);
+      }, 500);
+    }
+
+    function cancelHold() {
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    }
+
+    tab.addEventListener('mousedown',   startHold);
+    tab.addEventListener('mouseup',     cancelHold);
+    tab.addEventListener('mouseleave',  cancelHold);
+    tab.addEventListener('touchstart',  startHold,  { passive: true });
+    tab.addEventListener('touchend',    cancelHold);
+    tab.addEventListener('touchcancel', cancelHold);
+  }
+
+  // ── Populate sidebar with any places already bookmarked from a previous session ──
+  const previouslyMarked = JSON.parse(localStorage.getItem('markedPlaces') || '[]');
+  previouslyMarked.forEach(idx => {
+    if (SAMPLE_PLACES[idx]) addLocationTab(idx);
+  });
+
   } // End of setupEventHandlers function
 });
 
-// -----------------------------------------------------------------------------
-// SIDEBAR UI LOGIC
-// -----------------------------------------------------------------------------
-const sidebar = document.getElementById('filter-sidebar');
-const toggleBtn = document.getElementById('toggle-sidebar');
-
-toggleBtn.addEventListener('click', () => {
-  sidebar.classList.toggle('collapsed');
-  toggleBtn.textContent = sidebar.classList.contains('collapsed') ? 'Filter ▶' : '◀ Filter';
-});
+// (Legend sidebar removed — legend is now a fixed box in the bottom-right corner)
 
 // -----------------------------------------------------------------------------
-// LOCATION POPUP LOGIC
-// -----------------------------------------------------------------------------
-const locationPopup = document.getElementById('location-popup');
-const enableLocationBtn = document.getElementById('enable-location-btn');
-const skipLocationBtn = document.getElementById('skip-location-btn');
-
-// Show popup when page loads
-window.addEventListener('load', () => {
-  // Check if user previously dismissed or allowed location
-  const locationChoice = localStorage.getItem('locationChoice');
-  
-  console.log('🔍 Checking location preference...', locationChoice ? `Found: ${locationChoice}` : 'Not found (first time)');
-  
-  if (!locationChoice) {
-    // First time visitor - show popup after a brief delay
-    setTimeout(() => {
-      locationPopup.classList.remove('hidden');
-      console.log('📍 Location popup displayed (first time only)');
-    }, 1500);
-  } else {
-    // User has already made a choice - keep popup hidden
-    console.log('✅ Location choice already saved - popup will stay hidden');
-    if (locationChoice === 'allowed') {
-      console.log('💡 Live location will auto-activate once map is loaded');
-    } else {
-      console.log('💡 Use the location button in top-right corner to enable location tracking');
-    }
+// Auto-trigger geolocation silently on load if browser permission was previously granted
+window.addEventListener('load', async () => {
+  if (navigator.permissions && navigator.permissions.query) {
+    try {
+      const status = await navigator.permissions.query({ name: 'geolocation' });
+      if (status.state === 'granted') {
+        window._autoTriggerLocation && window._autoTriggerLocation();
+      }
+      status.addEventListener('change', () => {
+        if (status.state === 'granted') {
+          window._autoTriggerLocation && window._autoTriggerLocation();
+        }
+      });
+    } catch (_) { /* permissions API not available */ }
   }
-});
 
-// Handle "Enable Location" button click
-enableLocationBtn.addEventListener('click', () => {
-  console.log('📍 User clicked Enable Location button');
-  
-  // Hide popup
-  locationPopup.classList.add('hidden');
-  
-  // Save choice
-  localStorage.setItem('locationChoice', 'allowed');
-  console.log('✅ Choice saved: allowed - popup will never show again');
-  
-  console.log('🔍 Checking if browser supports geolocation...');
-  
-  // Check if geolocation is supported
-  if (!navigator.geolocation) {
-    alert('Geolocation is not supported by your browser');
-    console.error('❌ Geolocation not supported');
-    return;
-  }
-  
-  console.log('✅ Geolocation is supported!');
-  console.log('⏳ Requesting your location...');
-  console.log('💡 A permission popup should appear - click "Allow"');
-  
-  // Trigger the Mapbox geolocation control to show the live location icon
-  const triggerMapboxLocation = () => {
-    if (geolocateControl && map.loaded()) {
-      console.log('🎯 Activating Mapbox live location icon...');
-      geolocateControl.trigger();
-      console.log('✅ Live location icon enabled - tracking your position in real-time');
-      console.log('💡 Blue pulsing dot shows your location on the map');
-      console.log('💡 Map will NOT auto-center - you stay in control');
-    } else {
-      setTimeout(triggerMapboxLocation, 200);
-    }
-  };
-  triggerMapboxLocation();
-});
-
-// Handle "Skip" button click
-skipLocationBtn.addEventListener('click', () => {
-  console.log('📍 User skipped location');
-  
-  // Hide popup
-  locationPopup.classList.add('hidden');
-  
-  // Save choice
-  localStorage.setItem('locationChoice', 'skipped');
-  console.log('✅ Choice saved: skipped - popup will never show again');
+  // Start proximity rating watch
+  window._startProximityWatch && window._startProximityWatch();
 });
 
 // Debug function: manually trigger location from console
@@ -1215,3 +1484,362 @@ window.triggerLocationManually = function() {
 };
 
 console.log('💡 Debug tip: Type triggerLocationManually() in console to test location trigger');
+
+// =============================================================================
+// PROXIMITY RATING SYSTEM
+// Watches the user's GPS position. After 5 continuous minutes within 80 m of
+// a place they haven't yet rated, a "How was X?" modal slides up for them to rate.
+// =============================================================================
+const PROXIMITY_RADIUS_M   = 80;
+const PROXIMITY_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+const _proximityTimers = {};   // placeIndex → setTimeout handle
+
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R  = 6371000;
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a  = Math.sin(Δφ/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Interpolate between the same colour stops as the map bubbles
+function ratingToHex(rating) {
+  const stops = [
+    [1, [229, 57,  53]],
+    [2, [251, 140,  0]],
+    [3, [253, 216, 53]],
+    [4, [124, 179, 66]],
+    [5, [ 46, 125, 50]]
+  ];
+  const v = Math.max(1, Math.min(5, rating));
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [r1, c1] = stops[i];
+    const [r2, c2] = stops[i + 1];
+    if (v <= r2) {
+      const t = (v - r1) / (r2 - r1);
+      const ch = [0,1,2].map(j => Math.round(c1[j] + t * (c2[j] - c1[j])));
+      return `#${ch.map(n => n.toString(16).padStart(2,'0')).join('')}`;
+    }
+  }
+  return '#2e7d32';
+}
+
+function updateProximitySlider(slider) {
+  const val = parseFloat(slider.value);
+  const pct = ((val - 1) / 4) * 100;
+  const col = ratingToHex(val);
+  slider.style.background =
+    `linear-gradient(to right, ${col} 0%, ${col} ${pct}%, rgba(76,42,159,0.35) ${pct}%, rgba(76,42,159,0.35) 100%)`;
+  const thumb = slider.closest('.proximity-modal')?.querySelector('.prox-color-dot');
+  if (thumb) thumb.style.background = col;
+}
+
+function showProximityRatingModal(placeIndex, force = false) {
+  // Don't open a second modal if one is already showing
+  const existing_modal = document.getElementById('proximity-modal');
+  if (existing_modal) existing_modal.remove();
+
+  const place = SAMPLE_PLACES[placeIndex];
+  const existing = getUserRating(placeIndex);
+
+  const modal = document.createElement('div');
+  modal.id = 'proximity-modal';
+  modal.className = 'proximity-modal';
+  modal.innerHTML = `
+    <div class="proximity-card">
+      <button class="proximity-close" id="prox-close">✕</button>
+      <div class="proximity-icon">📍</div>
+      <h2 class="proximity-title">How was<br><span class="proximity-place-name">${place.name}</span>?</h2>
+      <p class="proximity-sub">You've been here a while — share your experience!</p>
+      <div class="proximity-slider-wrap">
+        <div class="prox-color-dot"></div>
+        <input type="range" min="1" max="5" step="0.1"
+               value="${existing !== null ? existing : 3}"
+               class="proximity-slider" id="prox-slider">
+        <div class="prox-slider-labels">
+          <span>Poor</span><span>Okay</span><span>Great</span>
+        </div>
+      </div>
+      <button class="proximity-submit" id="prox-submit">Submit Rating</button>
+      <button class="proximity-skip" id="prox-skip">Not now</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const slider = modal.querySelector('#prox-slider');
+  updateProximitySlider(slider);
+  slider.addEventListener('input', () => updateProximitySlider(slider));
+
+  modal.querySelector('#prox-close').addEventListener('click', () => modal.remove());
+  modal.querySelector('#prox-skip').addEventListener('click',  () => modal.remove());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+  modal.querySelector('#prox-submit').addEventListener('click', () => {
+    const rating = parseFloat(slider.value);
+    // Reuse the existing rating submission logic
+    const event = new CustomEvent('proximityRatingSubmit', { detail: { placeIndex, rating } });
+    document.dispatchEvent(event);
+    modal.querySelector('.proximity-card').innerHTML = `
+      <div class="proximity-icon">🎉</div>
+      <h2 class="proximity-title" style="font-size:20px">Thanks for rating<br><span class="proximity-place-name">${place.name}</span>!</h2>
+      <p class="proximity-sub">Your ⭐ ${rating.toFixed(1)} rating has been saved.</p>
+    `;
+    setTimeout(() => modal.remove(), 2200);
+  });
+}
+
+// Listen for rating submission from the proximity modal
+document.addEventListener('proximityRatingSubmit', (e) => {
+  const { placeIndex, rating } = e.detail;
+  const place = SAMPLE_PLACES[placeIndex];
+  if (!place) return;
+
+  // Persist to localStorage using the shared key format
+  saveUserRating(placeIndex, rating);
+
+  // Update the in-memory community ratings array
+  if (!place.communityRatings) place.communityRatings = [];
+  if (place._localRatingIndex !== undefined) {
+    place.communityRatings[place._localRatingIndex] = rating;
+  } else {
+    place._localRatingIndex = place.communityRatings.length;
+    place.communityRatings.push(rating);
+  }
+
+  // Save to Firestore
+  if (db) {
+    db.collection('ratings').doc(place.name).collection('reviews').add({
+      rating, timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(err => console.warn('Rating save error:', err));
+  }
+
+  // Refresh map bubbles
+  refreshMapSource();
+});
+
+function startProximityWatch() {
+  function handlePosition(pos) {
+    const { latitude, longitude } = pos.coords;
+    SAMPLE_PLACES.forEach((place, idx) => {
+      const dist = haversineDistance(latitude, longitude, place.lat, place.lng);
+      if (dist <= PROXIMITY_RADIUS_M) {
+        if (!_proximityTimers[idx]) {
+          _proximityTimers[idx] = setTimeout(() => {
+            delete _proximityTimers[idx];
+            if (getUserRating(idx) === null) showProximityRatingModal(idx);
+          }, PROXIMITY_DURATION_MS);
+        }
+      } else {
+        if (_proximityTimers[idx]) {
+          clearTimeout(_proximityTimers[idx]);
+          delete _proximityTimers[idx];
+        }
+      }
+    });
+  }
+
+  // Register callback so the dev panel can inject fake positions
+  window._registerFakePositionCallback && window._registerFakePositionCallback(handlePosition);
+
+  if (!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(
+    handlePosition,
+    (err) => console.warn('Proximity watch error:', err.message),
+    { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+  );
+}
+
+// Start watching once the map is loaded (called from inside map.on('load'))
+// Exposed so the map load handler can call it
+window._startProximityWatch = startProximityWatch;
+
+// =============================================================================
+// DEVELOPER TESTING PANEL — drag-to-fake-location mini-map
+// =============================================================================
+(function () {
+  const toggle    = document.getElementById('dev-toggle');
+  const panel     = document.getElementById('dev-panel');
+  const closeBtn  = document.getElementById('dev-close');
+  const placeList = document.getElementById('dev-place-list');
+  const statusEl  = document.getElementById('dev-coord-status');
+  if (!toggle || !panel) return;
+
+  // Callback registered by startProximityWatch so we can inject fake positions
+  let _fakeWatchCallback = null;
+  window._registerFakePositionCallback = (cb) => { _fakeWatchCallback = cb; };
+
+  // ── Toggle open/close ───────────────────────────────────────────────────
+  let minimapInited = false;
+
+  toggle.addEventListener('click', () => {
+    const isHidden = panel.classList.toggle('dev-panel-hidden');
+    if (!isHidden && !minimapInited) initMinimap();
+  });
+  closeBtn.addEventListener('click', () => panel.classList.add('dev-panel-hidden'));
+
+  // ── Mini-map ────────────────────────────────────────────────────────────
+  function initMinimap() {
+    minimapInited = true;
+
+    const minimap = new mapboxgl.Map({
+      container: 'dev-minimap',
+      style: 'mapbox://styles/mapbox/dark-v11',
+      center: [COVENTRY_CENTRE.lng, COVENTRY_CENTRE.lat],
+      zoom: 14.5,
+      accessToken: MAPBOX_ACCESS_TOKEN,
+      attributionControl: false,
+      logoPosition: 'bottom-left'
+    });
+
+    // Custom person marker element
+    const el = document.createElement('div');
+    el.className = 'dev-person-marker';
+    el.innerHTML = '🚶';
+
+    // Pulse dot (shown when within range of a place)
+    const pulse = document.createElement('div');
+    pulse.className = 'dev-in-range-dot';
+    pulse.style.display = 'none';
+    el.style.position = 'relative';
+    el.appendChild(pulse);
+
+    const marker = new mapboxgl.Marker({ element: el, draggable: true })
+      .setLngLat([COVENTRY_CENTRE.lng, COVENTRY_CENTRE.lat])
+      .addTo(minimap);
+
+    function onMarkerMove() {
+      const { lat, lng } = marker.getLngLat();
+
+      // Feed position into proximity watcher
+      if (_fakeWatchCallback) {
+        _fakeWatchCallback({ coords: { latitude: lat, longitude: lng } });
+      }
+
+      // Find nearest place for status text
+      let nearest = null, nearestDist = Infinity;
+      SAMPLE_PLACES.forEach((place, idx) => {
+        const d = haversineDistance(lat, lng, place.lat, place.lng);
+        if (d < nearestDist) { nearestDist = d; nearest = { place, idx, d }; }
+      });
+
+      const inRange = nearest && nearest.d <= PROXIMITY_RADIUS_M;
+      pulse.style.display = inRange ? 'block' : 'none';
+
+      if (nearest) {
+        const distText = nearest.d < 1000
+          ? `${Math.round(nearest.d)} m`
+          : `${(nearest.d / 1000).toFixed(1)} km`;
+        statusEl.style.color = inRange ? '#4ade80' : '#6b4fa0';
+        statusEl.textContent = inRange
+          ? `✓ Within range of ${nearest.place.name} — timer running`
+          : `Nearest: ${nearest.place.name} (${distText} away)`;
+      }
+    }
+
+    marker.on('drag',    onMarkerMove);
+    marker.on('dragend', onMarkerMove);
+
+    // Also add small place dots on the minimap so user can see where to drag
+    minimap.on('load', () => {
+      minimap.addSource('dev-places', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: SAMPLE_PLACES.map((p, i) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+            properties: { name: p.name }
+          }))
+        }
+      });
+      minimap.addLayer({
+        id: 'dev-place-dots',
+        type: 'circle',
+        source: 'dev-places',
+        paint: {
+          'circle-radius': 5,
+          'circle-color': '#a855f7',
+          'circle-opacity': 0.8,
+          'circle-stroke-width': 1,
+          'circle-stroke-color': '#ffffff'
+        }
+      });
+
+      // Tooltip on hover
+      const popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 8 });
+      minimap.on('mouseenter', 'dev-place-dots', (e) => {
+        minimap.getCanvas().style.cursor = 'pointer';
+        popup.setLngLat(e.features[0].geometry.coordinates)
+          .setHTML(`<span style="font-size:11px;color:#d4b8f8">${e.features[0].properties.name}</span>`)
+          .addTo(minimap);
+      });
+      minimap.on('mouseleave', 'dev-place-dots', () => {
+        minimap.getCanvas().style.cursor = '';
+        popup.remove();
+      });
+    });
+  }
+
+  // ── Place list — instant trigger ────────────────────────────────────────
+  function buildPlaceList() {
+    if (!placeList) return;
+    placeList.innerHTML = '';
+    SAMPLE_PLACES.forEach((place, idx) => {
+      const row = document.createElement('div');
+      row.className = 'dev-place-row';
+      row.innerHTML = `
+        <span class="dev-place-name" title="${place.name}">${place.name}</span>
+        <button class="dev-trigger-btn" data-idx="${idx}">▶ Trigger</button>
+      `;
+      row.querySelector('.dev-trigger-btn').addEventListener('click', () => {
+        showProximityRatingModal(idx, true);
+        panel.classList.add('dev-panel-hidden');
+      });
+      placeList.appendChild(row);
+    });
+  }
+  setTimeout(buildPlaceList, 500);
+})();
+
+// =============================================================================
+// WELCOME MODAL — shown once on first visit, never again
+// =============================================================================
+(function () {
+  const SEEN_KEY = 'proximity_welcome_seen';
+  const modal    = document.getElementById('welcome-modal');
+  const btn      = document.getElementById('welcome-dismiss');
+  if (!modal || !btn) return;
+
+  function dismiss() {
+    modal.classList.add('hidden');
+    localStorage.setItem(SEEN_KEY, '1');
+    setTimeout(() => { modal.style.display = 'none'; }, 420);
+  }
+
+  // Expose so dev panel can force-show it
+  window._showWelcomeModal = function () {
+    modal.style.display = '';
+    // Force a reflow so the animation replays
+    modal.classList.remove('hidden');
+    void modal.offsetWidth;
+  };
+
+  // If already seen, hide immediately with no animation
+  if (localStorage.getItem(SEEN_KEY)) {
+    modal.style.display = 'none';
+  }
+
+  btn.addEventListener('click', dismiss);
+  modal.addEventListener('click', (e) => { if (e.target === modal) dismiss(); });
+
+  // Dev panel "Show Introduction" button
+  const devIntroBtn = document.getElementById('dev-show-intro');
+  if (devIntroBtn) {
+    devIntroBtn.addEventListener('click', () => {
+      // Close the dev panel first so it doesn't sit on top
+      document.getElementById('dev-panel').classList.add('dev-panel-hidden');
+      window._showWelcomeModal();
+    });
+  }
+})();
