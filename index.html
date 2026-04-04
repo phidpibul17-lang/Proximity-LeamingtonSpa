@@ -16,43 +16,161 @@
   <!-- The Map Container -->
   <div id="map"></div>
 
-  <!-- Location Permission Popup -->
-  <div id="location-popup" class="location-popup-overlay hidden">
-    <div class="location-popup-content">
-      <div class="location-popup-icon">📍</div>
-      <h2>Know Where You Are</h2>
-      <p>See nearby bars, pubs, and restaurants around you!</p>
-      <button id="enable-location-btn" class="enable-location-btn">📍 Enable Location</button>
-      <button id="skip-location-btn" class="skip-location-btn">Skip for now</button>
+  <!-- Search Bar (top-centre) -->
+  <div id="search-bar-container" class="search-bar-container">
+    <div class="search-bar-wrapper">
+      <span class="search-bar-icon">🔍</span>
+      <input type="text" id="search-input" class="search-input" placeholder="bar · pub · quick munch" autocomplete="off" spellcheck="false" />
+      <button id="search-btn" class="search-btn" title="Search">&#9654;</button>
+    </div>
+    <p class="search-hint" id="search-hint">Search a category to discover places near you</p>
+  </div>
+
+  <!-- Legend / How-to-use guide (top-left) -->
+  <div id="legend-box" class="legend-box">
+    <div class="legend-title">Proximity <span class="legend-title-accent">Leamington</span></div>
+    <div class="legend-steps">
+      <div class="legend-step"><span class="legend-step-icon">🔍</span><span>Search where you want to go</span></div>
+      <div class="legend-step"><span class="legend-step-icon">🫧</span><span>Tap a bubble to see details</span></div>
+      <div class="legend-step"><span class="legend-step-icon">⭐</span><span>Mark each place you want to go</span></div>
+      <div class="legend-step"><span class="legend-step-icon">🚶</span><span>Get walking!</span></div>
+    </div>
+    <div class="legend-key">
+      <div class="legend-metric-title">Metrics for Places</div>
+
+      <div class="legend-metric-label">Colour — avg rating</div>
+      <div class="legend-colour-bar">
+        <div class="colour-stop" style="background:#e53935"></div>
+        <div class="colour-stop" style="background:#fb8c00"></div>
+        <div class="colour-stop" style="background:#fdd835"></div>
+        <div class="colour-stop" style="background:#7cb342"></div>
+        <div class="colour-stop" style="background:#2e7d32"></div>
+      </div>
+      <div class="legend-colour-labels"><span>lower ratings</span><span>higher ratings</span></div>
+
+      <div class="legend-metric-label" style="margin-top:10px">Size — number of reviews</div>
+      <div class="legend-size-bar">
+        <div class="legend-size-item"><div class="size-bubble" style="width:8px;height:8px"></div></div>
+        <div class="legend-size-item"><div class="size-bubble" style="width:12px;height:12px"></div></div>
+        <div class="legend-size-item"><div class="size-bubble" style="width:17px;height:17px"></div></div>
+        <div class="legend-size-item"><div class="size-bubble" style="width:22px;height:22px"></div></div>
+        <div class="legend-size-item"><div class="size-bubble" style="width:28px;height:28px"></div></div>
+      </div>
+      <div class="legend-colour-labels"><span>fewer</span><span>more</span></div>
     </div>
   </div>
 
-  <!-- Category Selector Sidebar -->
-  <div id="filter-sidebar" class="sidebar">
-    <button id="toggle-sidebar" class="toggle-btn">◀ Filter</button>
-    <div class="sidebar-content">
-      <h3>Bars & Pubs</h3>
-      <p class="subtitle">41 Places | Leamington Spa</p>
-      
-      <div class="filter-group">
-        <label><input type="checkbox" class="category-filter" value="bar" checked> 🍺 Bars</label>
-        <label><input type="checkbox" class="category-filter" value="pub" checked> 🍻 Pubs</label>
-        <label><input type="checkbox" class="category-filter" value="quick_munch" checked> 🍔 Quick Munch</label>
+  <!-- Welcome / Onboarding Modal (shown once on first visit) -->
+  <div id="welcome-modal" class="welcome-modal" aria-modal="true" role="dialog" aria-label="Welcome to Proximity">
+    <div class="welcome-card">
+
+      <div class="welcome-header">
+        <div class="welcome-logo">📍</div>
+        <h1 class="welcome-title">Welcome to <span class="welcome-accent">Proximity</span></h1>
+        <p class="welcome-sub">Your local guide to Leamington Spa's best bars, pubs & bites</p>
       </div>
 
-      <div class="legend">
-        <p><small><strong>Circle size</strong> = Number of Reviews</small></p>
-        <p class="color-scale-text"><small><strong>Color scale 🟡->🔴</strong><br>= Average Rating 1-5 (Adaptive)</small></p>
-        <div class="marked-filter">
-          <label><input type="checkbox" id="show-marked-only"> ⭐ Only Marked</label>
+      <div class="welcome-steps">
+        <div class="welcome-step">
+          <span class="welcome-step-icon">🔍</span>
+          <div>
+            <div class="welcome-step-title">Search where you want to go</div>
+            <div class="welcome-step-desc">Try <em>bar</em>, <em>pub</em> or <em>quick munch</em></div>
+          </div>
+        </div>
+        <div class="welcome-step">
+          <span class="welcome-step-icon">🫧</span>
+          <div>
+            <div class="welcome-step-title">Tap a bubble to see details</div>
+            <div class="welcome-step-desc">Photos, reviews &amp; community ratings</div>
+          </div>
+        </div>
+        <div class="welcome-step">
+          <span class="welcome-step-icon">⭐</span>
+          <div>
+            <div class="welcome-step-title">Mark each place you want to go</div>
+            <div class="welcome-step-desc">Saved to your list on the right</div>
+          </div>
+        </div>
+        <div class="welcome-step">
+          <span class="welcome-step-icon">🚶</span>
+          <div>
+            <div class="welcome-step-title">Get walking!</div>
+            <div class="welcome-step-desc">Tap a saved spot to fly straight to it</div>
+          </div>
         </div>
       </div>
+
+      <div class="welcome-metrics">
+        <div class="welcome-metric-title">Reading the bubbles</div>
+        <div class="welcome-metric-row">
+          <div class="welcome-metric-col">
+            <div class="welcome-metric-label">Colour = avg rating</div>
+            <div class="welcome-colour-bar">
+              <div class="colour-stop" style="background:#e53935"></div>
+              <div class="colour-stop" style="background:#fb8c00"></div>
+              <div class="colour-stop" style="background:#fdd835"></div>
+              <div class="colour-stop" style="background:#7cb342"></div>
+              <div class="colour-stop" style="background:#2e7d32"></div>
+            </div>
+            <div class="welcome-metric-ends"><span>lower</span><span>higher</span></div>
+          </div>
+          <div class="welcome-metric-col">
+            <div class="welcome-metric-label">Size = no. of reviews</div>
+            <div class="welcome-size-visual">
+              <div class="welcome-size-bubbles">
+                <div class="size-bubble" style="width:10px;height:10px"></div>
+                <div class="size-bubble" style="width:16px;height:16px"></div>
+                <div class="size-bubble" style="width:22px;height:22px"></div>
+                <div class="size-bubble" style="width:30px;height:30px"></div>
+              </div>
+              <div class="welcome-size-ends">
+                <span class="size-col-label">fewer</span>
+                <span class="size-col-label">more</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button id="welcome-dismiss" class="welcome-dismiss">Let's explore →</button>
     </div>
   </div>
 
-  <!-- Google Maps JavaScript API with Places Library -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&libraries=places" async defer></script>
-  
+  <!-- Locations Sidebar (RIGHT) — bookmarked places only -->
+  <div id="locations-sidebar" class="locations-sidebar">
+    <div class="locations-title">Locations to go</div>
+    <div id="locations-list" class="locations-list"></div>
+  </div>
+
+  <!-- Full-screen place detail panel (replaces floating popup) -->
+  <div id="place-detail-panel" class="place-detail-panel" aria-hidden="true">
+    <!-- content injected by showVotePopup() -->
+  </div>
+  <div id="detail-overlay" class="detail-overlay"></div>
+
+  <!-- Developer Testing Panel -->
+  <button id="dev-toggle" class="dev-toggle" title="Developer tools">🛠</button>
+  <div id="dev-panel" class="dev-panel dev-panel-hidden">
+    <div class="dev-panel-header">
+      <span>🛠 Dev — Proximity Tester</span>
+      <button id="dev-close" class="dev-close">✕</button>
+    </div>
+    <p class="dev-desc">Drag the pin on the map to fake your live location, or instantly trigger a place below.</p>
+    <div class="dev-map-section">
+      <div class="dev-map-label">🚶 Drag pin to set fake location</div>
+      <div id="dev-minimap" class="dev-minimap"></div>
+      <p class="dev-coord-status" id="dev-coord-status">Pin at centre — drag to move</p>
+    </div>
+    <div class="dev-divider"></div>
+    <div class="dev-util-section">
+      <div class="dev-map-label">🧪 UI Testing</div>
+      <button id="dev-show-intro" class="dev-util-btn">📖 Show Introduction</button>
+    </div>
+    <div class="dev-divider"></div>
+    <div id="dev-place-list" class="dev-place-list"></div>
+  </div>
+
   <!-- Mapbox GL JS Library -->
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
   
@@ -63,15 +181,6 @@
   <!-- Our custom JavaScript -->
   <script src="app.js"></script>
   
-  <!-- 
-    NOTE: The popup shows REAL business photos from Google Places API.
-    The current API key is a demo key. For production use, get your own at:
-    https://console.cloud.google.com/google/maps-apis
-    Enable "Places API" and "Maps JavaScript API"
-    Then update the key in BOTH:
-    1. index.html (line 37) - Google Maps script tag
-    2. app.js (line 7) - GOOGLE_API_KEY constant
-  -->
 
 </body>
 </html>
