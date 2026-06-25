@@ -600,6 +600,31 @@ map.on('load', async () => {
       }
     });
     
+    // Symbol layer: score number rendered inside each circle
+    map.addLayer({
+      id: 'place-bubble-labels',
+      type: 'symbol',
+      source: 'places',
+      layout: {
+        'text-field': ['number-format', ['get', 'averageRating'], { 'min-fraction-digits': 1, 'max-fraction-digits': 1 }],
+        'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
+        'text-size': [
+          'interpolate', ['linear'], ['get', 'effectiveVoteCount'],
+          0,  9,
+          10, 10,
+          25, 12,
+          50, 14
+        ],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true
+      },
+      paint: {
+        'text-color': '#ffffff',
+        'text-halo-color': 'rgba(0,0,0,0.25)',
+        'text-halo-width': 1
+      }
+    });
+
     console.log('14. ✅ Layer added - circles should be visible and clickable!');
     console.log('15. ==> Check the map - you should see', SAMPLE_PLACES.length, 'colored circles');
     console.log('16. Verifying layer exists:', map.getLayer('place-bubbles') ? 'YES ✓' : 'NO ✗');
@@ -842,9 +867,14 @@ map.on('load', async () => {
     const categoryLabel   = place.category.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
     const userRating      = getUserRating(placeIndex);
 
-    // Bubble colour — matches the circle on the map
-    const [r, g, b]  = ratingToColor(getPlaceColorRating(placeIndex));
-    const bubbleColor = `rgb(${r},${g},${b})`;
+    // Both bubbles use the same ratingToColor scale applied to their displayed score
+    const [r, g, b]    = ratingToColor(avgRating);
+    const bubbleColor  = `rgb(${r},${g},${b})`;
+
+    const [gr, gg, gb]    = ratingToColor(place.googleRating || 3);
+    const googleBubbleColor = `rgb(${gr},${gg},${gb})`;
+
+    const recentReviewCount = Math.ceil((place.googleReviewCount || 0) * 0.25);
 
     // ── Photo hero ────────────────────────────────────────────────────────
     const storedPhotos = place.photoUrls && place.photoUrls.length > 0;
@@ -893,17 +923,38 @@ map.on('load', async () => {
         <button class="detail-close-btn" id="detail-close-btn" aria-label="Close">✕</button>
 
         <div class="detail-name-row">
-          <div class="detail-bubble-wrap">
-            <div class="detail-bubble-ring" style="border-color:${bubbleColor}"></div>
-            <div class="detail-bubble-circle" style="background:${bubbleColor}">
-              <span class="detail-bubble-score">${avgRating}</span>
-            </div>
-          </div>
           <div class="detail-name-text">
             <h3>${place.name}</h3>
             <span class="place-category">${categoryLabel}</span>
           </div>
         </div>
+
+        <div class="detail-dual-bubbles">
+            <div class="detail-dual-bubble-col">
+              <div class="detail-bubble-wrap">
+                <div class="detail-bubble-ring" style="border-color:${bubbleColor}"></div>
+                <div class="detail-bubble-circle" style="background:${bubbleColor}">
+                  <span class="detail-bubble-score">${avgRating}</span>
+                </div>
+              </div>
+              <div class="detail-bubble-text">
+                <div class="detail-bubble-label">This month</div>
+                <div class="detail-bubble-count">${recentReviewCount} reviews</div>
+              </div>
+            </div>
+            <div class="detail-dual-bubble-col">
+              <div class="detail-bubble-wrap">
+                <div class="detail-bubble-ring" style="border-color:${googleBubbleColor}"></div>
+                <div class="detail-bubble-circle" style="background:${googleBubbleColor}">
+                  <span class="detail-bubble-score">${(place.googleRating || 0).toFixed(1)}</span>
+                </div>
+              </div>
+              <div class="detail-bubble-text">
+                <div class="detail-bubble-label">All Time</div>
+                <div class="detail-bubble-count">${(place.googleReviewCount || 0).toLocaleString()} reviews</div>
+              </div>
+            </div>
+          </div>
 
         <p class="place-description">${place.description || ''}</p>
 
@@ -912,10 +963,6 @@ map.on('load', async () => {
           <button class="${markButtonClass}" data-place-idx="${placeIndex}">${markButtonText}</button>
         </div>
 
-        <div class="rating-label">
-          <span>Community rating</span>
-          <span class="place-rating">⭐ ${avgRating}</span>
-        </div>
         ${userRating !== null
           ? `<p class="previous-rating">Your rating: ⭐ ${userRating.toFixed(1)}</p>`
           : ''}
@@ -1270,10 +1317,15 @@ map.on('load', async () => {
       return;
     }
 
-    const icon          = CATEGORY_ICONS[place.category] || '📍';
-    const categoryLabel = place.category.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-    const avgRating     = Math.round(getWeightedAverageRating(place) * 10) / 10;
-    const mapsUrl       = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' Leamington Spa')}`;
+    const icon               = CATEGORY_ICONS[place.category] || '📍';
+    const categoryLabel      = place.category.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+    const avgRating          = Math.round(getWeightedAverageRating(place) * 10) / 10;
+    const mapsUrl            = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + ' Leamington Spa')}`;
+    const recentCount        = Math.ceil((place.googleReviewCount || 0) * 0.25);
+    const [tr, tg, tb]       = ratingToColor(avgRating);
+    const thisMonthColor     = `rgb(${tr},${tg},${tb})`;
+    const [ar, ag, ab]       = ratingToColor(place.googleRating || 3);
+    const allTimeColor       = `rgb(${ar},${ag},${ab})`;
 
     const tab = document.createElement('div');
     tab.className        = 'location-tab';
@@ -1288,8 +1340,21 @@ map.on('load', async () => {
         </div>
       </div>
       <p class="tab-description">${place.description || ''}</p>
-      <div class="tab-footer">
-        <span class="tab-rating">⭐ ${avgRating}</span>
+      <div class="tab-ratings-row">
+        <div class="tab-rating-item">
+          <div class="tab-bubble" style="background:${thisMonthColor};">${avgRating}</div>
+          <div class="tab-rating-text">
+            <span class="tab-rating-label">This month</span>
+            <span class="tab-rating-count">${recentCount} reviews</span>
+          </div>
+        </div>
+        <div class="tab-rating-item">
+          <div class="tab-bubble" style="background:${allTimeColor};">${(place.googleRating || 0).toFixed(1)}</div>
+          <div class="tab-rating-text">
+            <span class="tab-rating-label">All Time</span>
+            <span class="tab-rating-count">${(place.googleReviewCount || 0).toLocaleString()} reviews</span>
+          </div>
+        </div>
         <a href="${mapsUrl}" target="_blank" class="tab-maps-link">📍 Maps</a>
       </div>
       <p class="tab-hold-hint">Hold to zoom in &amp; view</p>
@@ -1319,25 +1384,6 @@ map.on('load', async () => {
       tab.remove();
       refreshSidebarVisibility();
     }, 200);
-
-    // ── Unmark the place in localStorage if it is still marked ───────────
-    if (isPlaceMarked(placeIndex)) {
-      togglePlaceMark(placeIndex); // sets it to unmarked
-
-      // Reflect change on the mark button inside the open detail panel
-      const panelBtn = document.querySelector(
-        `.place-detail-panel .mark-button[data-place-idx="${placeIndex}"]`
-      );
-      if (panelBtn) {
-        panelBtn.classList.remove('marked');
-        panelBtn.textContent = '☆ Mark Place';
-      }
-
-      // Refresh map bubbles so any mark-specific styling is removed
-      if (map.getSource('places')) {
-        map.getSource('places').setData(placesToGeoJSON(SAMPLE_PLACES));
-      }
-    }
 
     // Clear highlight if this was the highlighted place
     if (highlightedPlaceIndex === placeIndex) {
